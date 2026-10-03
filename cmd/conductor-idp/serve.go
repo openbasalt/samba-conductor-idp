@@ -122,6 +122,8 @@ func cmdServe(ctx context.Context, cfgPath string, _ []string) error {
 	}
 	defer e.close()
 	log := e.log
+	// The OIDC library logs through the default logger.
+	slog.SetDefault(log)
 	p, err := e.providers()
 	if err != nil {
 		return err

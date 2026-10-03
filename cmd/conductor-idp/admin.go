@@ -8,6 +8,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/user"
 	"strings"
@@ -224,7 +225,7 @@ type spFlags struct {
 }
 
 func (f *spFlags) register(fs *flag.FlagSet) {
-	fs.StringVar(&f.metadata, "metadata", "", "SP metadata XML file (fills entity ID, ACS URLs, encryption certificate)")
+	fs.StringVar(&f.metadata, "metadata", "", "SP metadata XML file, - for standard input (fills entity ID, ACS URLs, encryption certificate)")
 	fs.StringVar(&f.entityID, "entity-id", "", "SP entity ID (without -metadata)")
 	fs.StringVar(&f.name, "name", "", "display name")
 	fs.Var(&f.acs, "acs", "ACS URL, HTTP-POST binding (repeatable)")
@@ -249,7 +250,7 @@ func (f *spFlags) input(existing *store.SAMLSP) (registry.SPInput, error) {
 		in.EncryptionCert = existing.EncryptionCert
 	}
 	if f.metadata != "" {
-		b, err := os.ReadFile(f.metadata)
+		b, err := readFileOrStdin(f.metadata)
 		if err != nil {
 			return in, err
 		}
@@ -600,4 +601,12 @@ func readCertDER(path string) ([]byte, error) {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
 	return b, nil
+}
+
+// readFileOrStdin reads a file, or standard input for "-" (bounded).
+func readFileOrStdin(path string) ([]byte, error) {
+	if path != "-" {
+		return os.ReadFile(path)
+	}
+	return io.ReadAll(io.LimitReader(os.Stdin, 1<<20))
 }

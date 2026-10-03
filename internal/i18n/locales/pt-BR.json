@@ -113,7 +113,7 @@
  "consent.allow": "Permitir",
  "consent.deny": "Negar",
  "consent.heading": "{0} quer usar sua conta",
- "consent.host": "O aplicativo em {0} vai receber:",
+ "consent.host": "Pedido pelo aplicativo em {0}.",
  "consent.intro": "Se você permitir, o aplicativo recebe:",
  "consent.scope.email": "Seu endereço de e-mail",
  "consent.scope.groups": "Os grupos dos quais você faz parte",

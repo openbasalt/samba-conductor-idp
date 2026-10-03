@@ -57,3 +57,9 @@ func TestRejects(t *testing.T) {
 		}
 	}
 }
+
+func TestExampleLoads(t *testing.T) {
+	if _, err := Load("../../idp.toml.example"); err != nil {
+		t.Fatal(err)
+	}
+}

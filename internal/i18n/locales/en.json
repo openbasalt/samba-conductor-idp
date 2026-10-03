@@ -113,7 +113,7 @@
  "consent.allow": "Allow",
  "consent.deny": "Deny",
  "consent.heading": "{0} wants to use your account",
- "consent.host": "The application at {0} will receive:",
+ "consent.host": "Requested by the application at {0}.",
  "consent.intro": "If you allow it, the application gets:",
  "consent.scope.email": "Your e-mail address",
  "consent.scope.groups": "The groups you belong to",

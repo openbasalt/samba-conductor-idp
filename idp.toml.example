@@ -1,0 +1,87 @@
+# Samba Conductor IdP configuration (/etc/conductor-idp/idp.toml).
+# Reference: docs/config.md. Unknown keys are rejected, so a typo never
+# silently falls back to a default.
+
+[server]
+# Public base URL: the OIDC issuer and the base of every SAML URL.
+# https only, no path. Relying parties pin it; changing it breaks them.
+issuer = "https://idp.example.com"
+# Built-in TLS (the key must be readable by the conductor-idp user).
+listen = ":9443"
+tls_cert = "/etc/conductor-idp/tls/cert.pem"
+tls_key = "/etc/conductor-idp/tls/key.pem"
+# Or behind a TLS reverse proxy on the same host (loopback only):
+# listen = "127.0.0.1:9080"
+# behind_proxy = true
+# trusted_proxies = ["127.0.0.1/32", "::1/128"]
+
+[domain]
+realm = "EXAMPLE.COM"
+# The CA that signs the DCs' LDAPS certificates; nothing else is trusted.
+ca_file = "/etc/conductor-idp/domain-ca.pem"
+# Empty dcs = discover DCs through DNS SRV records.
+preferred = ["dc1.example.com"]
+dcs = []
+dns_servers = []
+# Verify passwords with an LDAP simple bind over TLS when no KDC answers.
+simple_bind_fallback = false
+
+[service_account]
+# A plain domain user with no group memberships beyond Domain Users: it
+# only reads users and groups. Its password comes from the systemd
+# credential "ad-password" (or password_file).
+username = "svc-conductor-idp"
+password_file = ""
+
+[roles]
+# Who may use the admin pages: AD group SIDs. Empty = Domain Admins.
+admin_groups = []
+cache_seconds = 60
+
+[mfa]
+# Second factor for users who are not administrators: off, optional or
+# required. Administrators always need it. Clients and SAML apps can
+# require it too.
+policy = "optional"
+# "local": the idp keeps its own TOTP enrollments. "conductor": verify
+# against conductor's 2FA store through its local socket (same host).
+backend = "local"
+# conductor_socket = "/run/conductor/mfa.sock"
+admin_enrollment_requires_link = true
+issuer = "Samba Conductor IdP"
+
+[keys]
+# Empty: $CREDENTIALS_DIRECTORY/master-key (systemd LoadCredential).
+master_key_file = ""
+# OIDC signing keys rotate after rotate_days; replaced keys stay
+# published for overlap_hours (also the SAML staged-rotation overlap).
+rotate_days = 90
+overlap_hours = 48
+
+[tokens]
+id_token_minutes = 5
+access_token_minutes = 10
+refresh_token_hours = 720   # absolute lifetime of a refresh chain (30 days)
+refresh_idle_hours = 168    # a refresh token unused for 7 days expires
+
+[session]
+# The idp's single sign-on session.
+idle_minutes = 60
+absolute_hours = 8
+
+[ratelimit]
+per_ip_per_minute = 30
+account_failures = 5          # keep below the domain's lockout threshold
+account_window_minutes = 15
+token_per_ip_per_minute = 120
+
+[state]
+database = "/var/lib/conductor-idp/idp.db"
+
+[ui]
+default_language = "en"   # or "pt-BR"
+product_name = "Samba Conductor"
+
+[saml]
+enabled = true
+assertion_minutes = 5
