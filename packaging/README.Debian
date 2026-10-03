@@ -1,0 +1,21 @@
+conductor-idp for Debian and Ubuntu
+===================================
+
+Installing the package creates the "conductor-idp" system user,
+/etc/conductor-idp (root:conductor-idp 0750) with tls/ and credentials/
+(root 0700), the conffile /etc/conductor-idp/idp.toml (example values) and
+/var/lib/conductor-idp. It does not enable or start anything.
+
+  1. A read-only AD service account (docs/install.md, step 1).
+  2. TLS files in /etc/conductor-idp/tls/ and the domain CA in
+     /etc/conductor-idp/domain-ca.pem.
+  3. sudo conductor-idp gen-key /etc/conductor-idp/credentials/master-key
+     and the service account's password in credentials/ad-password (0600).
+  4. Edit /etc/conductor-idp/idp.toml (issuer, realm, service account).
+  5. sudo systemctl enable --now conductor-idp
+
+Upgrades restart the service when it is running. "apt purge conductor-idp"
+deletes /etc/conductor-idp (including the master key) and
+/var/lib/conductor-idp (clients, signing keys, audit log): back them up first.
+
+Full guide: https://github.com/openbasalt/samba-conductor-idp/blob/main/docs/install.md

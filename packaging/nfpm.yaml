@@ -1,0 +1,71 @@
+# nfpm configuration of the "conductor-idp" package. Built by
+# packaging/build.sh, which sets ARCH, DEB_VERSION, DEB_REVISION, BUILD
+# (staging directory) and SOURCE_DATE_EPOCH (every timestamp). Paths are
+# relative to the repository root.
+name: conductor-idp
+arch: ${ARCH}
+platform: linux
+version: ${DEB_VERSION}
+version_schema: none
+release: ${DEB_REVISION}
+section: admin
+priority: optional
+maintainer: Samba Conductor maintainers <samba-conductor@openbasalt.org>
+vendor: OpenBasalt
+homepage: https://github.com/openbasalt/samba-conductor-idp
+license: MIT
+description: |-
+  OpenID Connect and SAML 2.0 identity provider backed by Samba AD
+  conductor-idp signs users in with their Active Directory account (Kerberos
+  or LDAPS to the domain controllers) and serves OpenID Connect (Authorization
+  Code with PKCE, discovery, JWKS with key rotation, refresh token rotation)
+  and SAML 2.0 to registered applications, with access per AD group and the
+  Samba Conductor second-factor policy. It is part of Samba Conductor and can
+  run on a domain controller or on any host with LDAPS access to one.
+  .
+  Nothing is started at installation: configure it first (see
+  /usr/share/doc/conductor-idp/README.Debian).
+
+depends:
+  - systemd | systemd-standalone-sysusers | systemd-sysusers
+suggests:
+  - conductor
+
+contents:
+  - expand: true
+    src: ${BUILD}/bin/conductor-idp
+    dst: /usr/bin/conductor-idp
+    file_info: {mode: 0755}
+  - expand: true
+    src: ${BUILD}/systemd/conductor-idp.service
+    dst: /usr/lib/systemd/system/conductor-idp.service
+    file_info: {mode: 0644}
+  - src: packaging/sysusers.conf
+    dst: /usr/lib/sysusers.d/conductor-idp.conf
+    file_info: {mode: 0644}
+  - src: idp.toml.example
+    dst: /etc/conductor-idp/idp.toml
+    type: config|noreplace
+    file_info: {mode: 0644}
+  - expand: true
+    src: ${BUILD}/man/conductor-idp.8.gz
+    dst: /usr/share/man/man8/conductor-idp.8.gz
+    file_info: {mode: 0644}
+  - src: packaging/copyright
+    dst: /usr/share/doc/conductor-idp/copyright
+    file_info: {mode: 0644}
+  - expand: true
+    src: ${BUILD}/doc/conductor-idp/changelog.Debian.gz
+    dst: /usr/share/doc/conductor-idp/changelog.Debian.gz
+    file_info: {mode: 0644}
+  - src: packaging/README.Debian
+    dst: /usr/share/doc/conductor-idp/README.Debian
+    file_info: {mode: 0644}
+  - src: packaging/lintian-overrides
+    dst: /usr/share/lintian/overrides/conductor-idp
+    file_info: {mode: 0644}
+
+scripts:
+  postinstall: packaging/scripts/postinst
+  preremove: packaging/scripts/prerm
+  postremove: packaging/scripts/postrm

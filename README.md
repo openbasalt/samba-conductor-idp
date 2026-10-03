@@ -56,6 +56,8 @@ crewjam SAML SP, desktop and mobile ([`docs/usage-p4.md`](docs/usage-p4.md)).
 ```sh
 make check                      # gofmt, vet, staticcheck, govulncheck, go test -race
 make build                      # bin/conductor-idp (CGO off, static)
+make package                    # dist/: .deb for amd64 and arm64, SBOMs
+make lintian                    # Debian 13's lintian on dist/*.deb
 scripts/lab-deploy.sh [--snapshot]   # build on server-home, install on the idp lab's dc1
 e2e/run-lab.sh [desktop|mobile]      # Playwright suite on server-home
 ```

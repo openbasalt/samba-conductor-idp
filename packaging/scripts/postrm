@@ -1,0 +1,38 @@
+#!/bin/sh
+# postrm of conductor-idp. Purge deletes the configuration, the credentials
+# (master key: back it up first), the state (clients, keys, audit log) and
+# the bookkeeping.
+# The system user is kept: files it owns may exist elsewhere (backups,
+# copies), and a reused UID would own them.
+set -e
+
+ENABLE="conductor-idp.service"
+
+case "$1" in
+remove)
+	if [ -z "${DPKG_ROOT:-}" ] && [ -d /run/systemd/system ]; then
+		systemctl --system daemon-reload >/dev/null || true
+	fi
+	if command -v deb-systemd-helper >/dev/null 2>&1; then
+		deb-systemd-helper mask $ENABLE >/dev/null || true
+	fi
+	;;
+purge)
+	if command -v deb-systemd-helper >/dev/null 2>&1; then
+		deb-systemd-helper purge $ENABLE >/dev/null || true
+		deb-systemd-helper unmask $ENABLE >/dev/null || true
+	fi
+	for path in /etc/conductor-idp/idp.toml /etc/conductor-idp; do
+		if dpkg-statoverride --list "$path" >/dev/null 2>&1; then
+			dpkg-statoverride --remove "$path"
+		fi
+	done
+	rm -rf /etc/systemd/system/conductor-idp.service.d
+	rm -rf /etc/conductor-idp /var/lib/conductor-idp
+	if [ -z "${DPKG_ROOT:-}" ] && [ -d /run/systemd/system ]; then
+		systemctl --system daemon-reload >/dev/null || true
+	fi
+	;;
+esac
+
+exit 0
