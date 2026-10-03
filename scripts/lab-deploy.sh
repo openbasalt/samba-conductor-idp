@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build conductor-idp (and the test tools) on server-home and install it on
+# Build conductor-idp (and the test tools) on the lab host and install it on
 # the idp lab's dc1 (scripts/lab/idp-lab.sh).
 #
 #   scripts/lab-deploy.sh               # build + install/upgrade on dc1
@@ -13,8 +13,11 @@ rsync -a --delete --exclude .git/ --exclude /conductor-idp/bin/ --exclude node_m
 ssh -o BatchMode=yes "$LAB_HOST" bash -s -- "$VERSION" "${1:-}" <<'REMOTE'
 set -euo pipefail
 version="$1" snap="${2:-}"
+# A workspace of the two copies: the lab runs the local ad, not the
+# version go.mod pins.
+printf 'go 1.27.0\n\nuse (\n\t./ad\n\t./conductor-idp\n)\n' >~/conductor-idplab/src/go.work
+export GOWORK="$HOME/conductor-idplab/src/go.work" GOTOOLCHAIN=go1.27.0 CGO_ENABLED=0
 cd ~/conductor-idplab/src/conductor-idp
-export GOWORK=off GOTOOLCHAIN=go1.27.0 CGO_ENABLED=0
 out=~/conductor-idplab/build
 mkdir -p "$out"
 for cmd in conductor-idp example-rp example-sp; do

@@ -14,8 +14,8 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/samba-conductor/conductor-idp/internal/secret"
-	"github.com/samba-conductor/conductor-idp/internal/store"
+	"github.com/openbasalt/samba-conductor-idp/internal/secret"
+	"github.com/openbasalt/samba-conductor-idp/internal/store"
 )
 
 // keyBits of the RSA signing key. RSA because every SAML service provider

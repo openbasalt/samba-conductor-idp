@@ -1,7 +1,7 @@
 # P4 lab run (2026-10-02/03)
 
 What was run to validate conductor-idp end to end. No secrets here: they
-live only on server-home in 0600 files under `~/conductor-idplab/state`.
+live only on the lab host in 0600 files under `~/conductor-idplab/state`.
 
 ## Lab
 
@@ -18,12 +18,12 @@ touched), re-parameterized:
 | idp | `https://dc1.lab.conductor.test:9443`, unit `conductor-idp` on dc1 |
 
 ```sh
-# on server-home, once: copy planning/lab to ~/conductor-idplab/lab and patch common.sh
+# on the lab host, once: copy planning/lab to ~/conductor-idplab/lab and patch common.sh
 # (PREFIX=conductor-idplab, BRIDGE=cndidp0, SUBNET=10.96.0, MACs 52:54:00:96:00:1x,
 #  LAB_HOME=~/conductor-idplab/state), then:
 ~/conductor-idplab/lab/up.sh                      # 2 DCs, seed, snapshot "seeded" (~7 min)
 # from the laptop:
-scripts/lab-deploy.sh --snapshot                  # build on server-home, install on dc1, snapshot idp-p4
+scripts/lab-deploy.sh --snapshot                  # build on the lab host, install on dc1, snapshot idp-p4
 e2e/run-lab.sh                                    # Playwright desktop + mobile
 ```
 

@@ -10,13 +10,13 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/samba-conductor/ad"
-	"github.com/samba-conductor/ad/sid"
-	"github.com/samba-conductor/conductor-idp/internal/config"
-	"github.com/samba-conductor/conductor-idp/internal/directory"
-	"github.com/samba-conductor/conductor-idp/internal/mfa"
-	"github.com/samba-conductor/conductor-idp/internal/store"
-	"github.com/samba-conductor/conductor-idp/internal/totp"
+	ad "github.com/openbasalt/samba-conductor-ad"
+	"github.com/openbasalt/samba-conductor-ad/sid"
+	"github.com/openbasalt/samba-conductor-idp/internal/config"
+	"github.com/openbasalt/samba-conductor-idp/internal/directory"
+	"github.com/openbasalt/samba-conductor-idp/internal/mfa"
+	"github.com/openbasalt/samba-conductor-idp/internal/store"
+	"github.com/openbasalt/samba-conductor-idp/internal/totp"
 	"rsc.io/qr"
 )
 

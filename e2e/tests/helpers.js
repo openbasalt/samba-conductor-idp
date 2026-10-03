@@ -3,7 +3,7 @@ import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
-// Secrets come from the environment set by run-lab.sh (read on server-home
+// Secrets come from the environment set by run-lab.sh (read on the lab host
 // from the lab's 0600 files); they are never printed.
 export const env = {
   userPassword: required('E2E_USER_PASSWORD'),

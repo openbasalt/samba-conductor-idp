@@ -15,8 +15,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/zitadel/oidc/v3/pkg/op"
 
-	"github.com/samba-conductor/conductor-idp/internal/secret"
-	"github.com/samba-conductor/conductor-idp/internal/store"
+	"github.com/openbasalt/samba-conductor-idp/internal/secret"
+	"github.com/openbasalt/samba-conductor-idp/internal/store"
 )
 
 // keyAlg signs ID tokens. ES256 is supported by every current RP library

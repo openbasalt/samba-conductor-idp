@@ -3,8 +3,8 @@ package web
 import (
 	"net/http"
 
-	"github.com/samba-conductor/conductor-idp/internal/oidcp"
-	"github.com/samba-conductor/conductor-idp/internal/samlidp"
+	"github.com/openbasalt/samba-conductor-idp/internal/oidcp"
+	"github.com/openbasalt/samba-conductor-idp/internal/samlidp"
 )
 
 // pages returns the route table of the HTML pages. Every page goes

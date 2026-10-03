@@ -13,15 +13,15 @@ import (
 
 	"github.com/zitadel/oidc/v3/pkg/op"
 
-	"github.com/samba-conductor/ad/sid"
-	"github.com/samba-conductor/conductor-idp/internal/config"
-	"github.com/samba-conductor/conductor-idp/internal/directory"
-	"github.com/samba-conductor/conductor-idp/internal/i18n"
-	"github.com/samba-conductor/conductor-idp/internal/mfa"
-	"github.com/samba-conductor/conductor-idp/internal/oidcp"
-	"github.com/samba-conductor/conductor-idp/internal/ratelimit"
-	"github.com/samba-conductor/conductor-idp/internal/samlidp"
-	"github.com/samba-conductor/conductor-idp/internal/store"
+	"github.com/openbasalt/samba-conductor-ad/sid"
+	"github.com/openbasalt/samba-conductor-idp/internal/config"
+	"github.com/openbasalt/samba-conductor-idp/internal/directory"
+	"github.com/openbasalt/samba-conductor-idp/internal/i18n"
+	"github.com/openbasalt/samba-conductor-idp/internal/mfa"
+	"github.com/openbasalt/samba-conductor-idp/internal/oidcp"
+	"github.com/openbasalt/samba-conductor-idp/internal/ratelimit"
+	"github.com/openbasalt/samba-conductor-idp/internal/samlidp"
+	"github.com/openbasalt/samba-conductor-idp/internal/store"
 )
 
 // Options build a Server.

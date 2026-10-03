@@ -1,6 +1,6 @@
 import { defineConfig, devices } from '@playwright/test';
 
-// The suite runs on server-home in the official Playwright container (host
+// The suite runs on the lab host in the official Playwright container (host
 // network) against conductor-idp on the idp lab's dc1, with the example RP,
 // the example SAML SP and Grafana as relying parties. e2e/run-lab.sh sets
 // the environment; see docs/usage-p4.md.

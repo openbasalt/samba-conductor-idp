@@ -30,10 +30,10 @@ import (
 	"github.com/zitadel/oidc/v3/pkg/oidc"
 	"github.com/zitadel/oidc/v3/pkg/op"
 
-	"github.com/samba-conductor/ad/sid"
-	"github.com/samba-conductor/conductor-idp/internal/directory"
-	"github.com/samba-conductor/conductor-idp/internal/secret"
-	"github.com/samba-conductor/conductor-idp/internal/store"
+	"github.com/openbasalt/samba-conductor-ad/sid"
+	"github.com/openbasalt/samba-conductor-idp/internal/directory"
+	"github.com/openbasalt/samba-conductor-idp/internal/secret"
+	"github.com/openbasalt/samba-conductor-idp/internal/store"
 )
 
 // Scopes beyond the standard ones.

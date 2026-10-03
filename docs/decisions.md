@@ -156,7 +156,7 @@ be added later if the owner prefers one click less.
 
 ## D9. Lab
 
-Own lab, as the spec requires: a copy of `planning/lab` on server-home with
+Own lab, as the spec requires: a copy of `planning/lab` on the lab host with
 prefix `conductor-idplab`, bridge `cndidp0`, subnet **10.96.0.0/24** (the
 spec suggested 10.94, but P3's drill network already used 10.94 and P5's
 lab 10.95), state in `~/conductor-idplab/state`, two DCs (same domain

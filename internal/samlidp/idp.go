@@ -36,8 +36,8 @@ import (
 	"github.com/crewjam/saml"
 	dsig "github.com/russellhaering/goxmldsig"
 
-	"github.com/samba-conductor/conductor-idp/internal/directory"
-	"github.com/samba-conductor/conductor-idp/internal/store"
+	"github.com/openbasalt/samba-conductor-idp/internal/directory"
+	"github.com/openbasalt/samba-conductor-idp/internal/store"
 )
 
 // NameID formats offered to service providers.

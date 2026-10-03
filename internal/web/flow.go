@@ -13,9 +13,9 @@ import (
 	"github.com/zitadel/oidc/v3/pkg/oidc"
 	"github.com/zitadel/oidc/v3/pkg/op"
 
-	"github.com/samba-conductor/conductor-idp/internal/oidcp"
-	"github.com/samba-conductor/conductor-idp/internal/samlidp"
-	"github.com/samba-conductor/conductor-idp/internal/store"
+	"github.com/openbasalt/samba-conductor-idp/internal/oidcp"
+	"github.com/openbasalt/samba-conductor-idp/internal/samlidp"
+	"github.com/openbasalt/samba-conductor-idp/internal/store"
 )
 
 // finish continues a fully signed-in session to where the sign-in started.

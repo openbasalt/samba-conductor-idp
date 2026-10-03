@@ -15,13 +15,13 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/samba-conductor/conductor-idp/internal/directory"
-	"github.com/samba-conductor/conductor-idp/internal/mfa"
-	"github.com/samba-conductor/conductor-idp/internal/registry"
-	"github.com/samba-conductor/conductor-idp/internal/samlidp"
-	"github.com/samba-conductor/conductor-idp/internal/secret"
-	"github.com/samba-conductor/conductor-idp/internal/store"
-	"github.com/samba-conductor/conductor-idp/internal/web"
+	"github.com/openbasalt/samba-conductor-idp/internal/directory"
+	"github.com/openbasalt/samba-conductor-idp/internal/mfa"
+	"github.com/openbasalt/samba-conductor-idp/internal/registry"
+	"github.com/openbasalt/samba-conductor-idp/internal/samlidp"
+	"github.com/openbasalt/samba-conductor-idp/internal/secret"
+	"github.com/openbasalt/samba-conductor-idp/internal/store"
+	"github.com/openbasalt/samba-conductor-idp/internal/web"
 )
 
 // multi is a repeatable string flag (also accepts comma-separated values).

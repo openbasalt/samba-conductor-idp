@@ -4,7 +4,7 @@
 # it may run on a DC or on any other host.
 [Unit]
 Description=Samba Conductor IdP (OIDC and SAML)
-Documentation=https://github.com/samba-conductor/conductor-idp/blob/main/docs/install.md
+Documentation=https://github.com/openbasalt/samba-conductor-idp/blob/main/docs/install.md
 # samba-ad-dc only matters when the idp runs on a DC (ignored elsewhere).
 After=network-online.target samba-ad-dc.service
 Wants=network-online.target

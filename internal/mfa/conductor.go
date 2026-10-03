@@ -9,7 +9,7 @@ import (
 	"net"
 	"time"
 
-	"github.com/samba-conductor/conductor-idp/internal/directory"
+	"github.com/openbasalt/samba-conductor-idp/internal/directory"
 )
 
 // Conductor verifies second factors against conductor's 2FA store through

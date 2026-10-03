@@ -20,17 +20,17 @@ import (
 	"time"
 
 	"github.com/go-ldap/ldap/v3"
-	"github.com/samba-conductor/ad"
-	"github.com/samba-conductor/ad/sid"
+	ad "github.com/openbasalt/samba-conductor-ad"
+	"github.com/openbasalt/samba-conductor-ad/sid"
 
-	"github.com/samba-conductor/conductor-idp/internal/config"
-	"github.com/samba-conductor/conductor-idp/internal/directory"
-	"github.com/samba-conductor/conductor-idp/internal/mfa"
-	"github.com/samba-conductor/conductor-idp/internal/oidcp"
-	"github.com/samba-conductor/conductor-idp/internal/samlidp"
-	"github.com/samba-conductor/conductor-idp/internal/secret"
-	"github.com/samba-conductor/conductor-idp/internal/store"
-	"github.com/samba-conductor/conductor-idp/internal/totp"
+	"github.com/openbasalt/samba-conductor-idp/internal/config"
+	"github.com/openbasalt/samba-conductor-idp/internal/directory"
+	"github.com/openbasalt/samba-conductor-idp/internal/mfa"
+	"github.com/openbasalt/samba-conductor-idp/internal/oidcp"
+	"github.com/openbasalt/samba-conductor-idp/internal/samlidp"
+	"github.com/openbasalt/samba-conductor-idp/internal/secret"
+	"github.com/openbasalt/samba-conductor-idp/internal/store"
+	"github.com/openbasalt/samba-conductor-idp/internal/totp"
 )
 
 // ---- fake directory ----

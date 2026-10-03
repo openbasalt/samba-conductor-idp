@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run the Playwright suite on server-home against conductor-idp on the idp
+# Run the Playwright suite on the lab host against conductor-idp on the idp
 # lab's dc1, once per project (desktop, mobile), each on a freshly reset
 # lab (snapshot idp-p4, made by scripts/lab-deploy.sh --snapshot).
 #
@@ -7,10 +7,10 @@
 #   e2e/run-lab.sh desktop
 #   E2E_GREP='SAML' e2e/run-lab.sh desktop
 #
-# Relying parties run next to the browser on server-home (host network):
+# Relying parties run next to the browser on the lab host (host network):
 # the example RP (:5556), the example SAML SP (:8000) and Grafana (:3300),
 # in containers named conductor-idplab-*, removed afterwards. Secrets stay
-# on server-home (0600 env files, deleted after the run). After each run
+# on the lab host (0600 env files, deleted after the run). After each run
 # the audit chain is verified on dc1. Screenshots and the HTML report are
 # copied back to e2e/screenshots and e2e/playwright-report.
 set -euo pipefail

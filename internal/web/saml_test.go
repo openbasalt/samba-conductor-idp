@@ -22,9 +22,9 @@ import (
 
 	"github.com/crewjam/saml"
 
-	"github.com/samba-conductor/conductor-idp/internal/registry"
-	"github.com/samba-conductor/conductor-idp/internal/samlidp"
-	"github.com/samba-conductor/conductor-idp/internal/store"
+	"github.com/openbasalt/samba-conductor-idp/internal/registry"
+	"github.com/openbasalt/samba-conductor-idp/internal/samlidp"
+	"github.com/openbasalt/samba-conductor-idp/internal/store"
 )
 
 const (

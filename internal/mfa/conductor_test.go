@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/samba-conductor/ad/sid"
-	"github.com/samba-conductor/conductor-idp/internal/directory"
+	"github.com/openbasalt/samba-conductor-ad/sid"
+	"github.com/openbasalt/samba-conductor-idp/internal/directory"
 )
 
 // fakeConductor answers the socket protocol the way conductor will.

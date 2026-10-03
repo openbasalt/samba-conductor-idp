@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# conductor-idp's lab, on server-home: a copy of planning/lab with its own
+# conductor-idp's lab, on the lab host: a copy of planning/lab with its own
 # prefix (conductor-idplab), bridge (cndidp0), subnet (10.96.0.0/24) and
 # state directory (~/conductor-idplab/state), so the shared conductor-lab
 # VMs are never touched. See docs/usage-p4.md.
@@ -8,7 +8,7 @@
 #   idp-lab.sh clients                          (re)register the lab's test clients
 #   idp-lab.sh cli ARGS...                      run conductor-idp ARGS on dc1 as the service user
 #
-# Run on server-home with LAB_DIR pointing at the patched lab copy
+# Run on the lab host with LAB_DIR pointing at the patched lab copy
 # (default ~/conductor-idplab/lab).
 set -euo pipefail
 LAB_COPY="${IDP_LAB_DIR:-$HOME/conductor-idplab/lab}"

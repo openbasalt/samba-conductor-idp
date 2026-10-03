@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/samba-conductor/conductor-idp/internal/i18n"
+	"github.com/openbasalt/samba-conductor-idp/internal/i18n"
 )
 
 // Perm is what a route requires.

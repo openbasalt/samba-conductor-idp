@@ -1,7 +1,7 @@
 {
   "name": "conductor-idp-e2e",
   "private": true,
-  "description": "Playwright end-to-end tests of conductor-idp against the server-home idp lab",
+  "description": "Playwright end-to-end tests of conductor-idp against the idp lab",
   "type": "module",
   "scripts": {
     "test": "playwright test"

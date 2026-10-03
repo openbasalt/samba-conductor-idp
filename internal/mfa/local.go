@@ -5,10 +5,10 @@ import (
 	"errors"
 	"time"
 
-	"github.com/samba-conductor/conductor-idp/internal/directory"
-	"github.com/samba-conductor/conductor-idp/internal/secret"
-	"github.com/samba-conductor/conductor-idp/internal/store"
-	"github.com/samba-conductor/conductor-idp/internal/totp"
+	"github.com/openbasalt/samba-conductor-idp/internal/directory"
+	"github.com/openbasalt/samba-conductor-idp/internal/secret"
+	"github.com/openbasalt/samba-conductor-idp/internal/store"
+	"github.com/openbasalt/samba-conductor-idp/internal/totp"
 )
 
 // Local keeps second factors in the idp's own database.

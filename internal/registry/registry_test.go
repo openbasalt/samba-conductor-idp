@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/samba-conductor/conductor-idp/internal/store"
+	"github.com/openbasalt/samba-conductor-idp/internal/store"
 )
 
 func TestValidRedirect(t *testing.T) {

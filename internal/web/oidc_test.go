@@ -13,8 +13,8 @@ import (
 
 	jose "github.com/go-jose/go-jose/v4"
 
-	"github.com/samba-conductor/conductor-idp/internal/registry"
-	"github.com/samba-conductor/conductor-idp/internal/store"
+	"github.com/openbasalt/samba-conductor-idp/internal/registry"
+	"github.com/openbasalt/samba-conductor-idp/internal/store"
 )
 
 const rpRedirect = "https://rp.example.test/callback"

@@ -16,7 +16,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/samba-conductor/conductor-idp/internal/directory"
+	"github.com/openbasalt/samba-conductor-idp/internal/directory"
 )
 
 // Result of a verification.

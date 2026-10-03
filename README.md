@@ -58,8 +58,8 @@ make check                      # gofmt, vet, staticcheck, govulncheck, go test 
 make build                      # bin/conductor-idp (CGO off, static)
 make package                    # dist/: .deb for amd64 and arm64, SBOMs
 make lintian                    # Debian 13's lintian on dist/*.deb
-scripts/lab-deploy.sh [--snapshot]   # build on server-home, install on the idp lab's dc1
-e2e/run-lab.sh [desktop|mobile]      # Playwright suite on server-home
+scripts/lab-deploy.sh [--snapshot]   # build on the lab host, install on the idp lab's dc1
+e2e/run-lab.sh [desktop|mobile]      # Playwright suite on the lab host
 ```
 
 | Path | What |
@@ -76,7 +76,9 @@ e2e/run-lab.sh [desktop|mobile]      # Playwright suite on server-home
 | `deploy/systemd` | unit |
 | `e2e`, `scripts/lab` | Playwright suite, lab install |
 
-The module uses `replace github.com/samba-conductor/ad => ../ad` until the
-family has a public home.
+The module is `github.com/openbasalt/samba-conductor-idp`; it imports the `ad`
+library (`github.com/openbasalt/samba-conductor-ad`) at the version `go.mod`
+pins; a Go workspace builds against a local copy instead
+([CONTRIBUTING.md](CONTRIBUTING.md)).
 
 License: see LICENSE.
