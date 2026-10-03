@@ -1,0 +1,10 @@
+Samba Conductor: conductor-idp
+Copyright 2026 Edimar Cardoso and the Samba Conductor contributors.
+
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+Binary distributions of conductor-idp include github.com/zitadel/oidc/v3
+(https://github.com/zitadel/oidc), licensed under the Apache License,
+Version 2.0, whose NOTICE reads:
+
+  Copyright The zitadel/oidc Contributors

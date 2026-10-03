@@ -81,4 +81,4 @@ library (`github.com/openbasalt/samba-conductor-ad`) at the version `go.mod`
 pins; a Go workspace builds against a local copy instead
 ([CONTRIBUTING.md](CONTRIBUTING.md)).
 
-License: see LICENSE.
+License: Apache-2.0 ([LICENSE](LICENSE), [NOTICE](NOTICE)).
