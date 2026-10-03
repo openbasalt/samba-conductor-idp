@@ -1,0 +1,10 @@
+{{define "title"}}{{t "saml.title"}}{{end}}
+{{define "content"}}<div class="card narrow">
+  <h1>{{t "flow.continue_to" .D.App}}</h1>
+  <p>{{t "saml.intro"}}</p>
+  <form method="post" action="{{.D.Form.URL}}" data-e2e="saml-form-post">
+    <input type="hidden" name="SAMLResponse" value="{{.D.Form.SAMLResponse}}">
+    {{if .D.Form.RelayState}}<input type="hidden" name="RelayState" value="{{.D.Form.RelayState}}">{{end}}
+    <button class="btn btn-primary btn-block" type="submit" autofocus data-e2e="saml-btn-continue">{{t "saml.continue"}}</button>
+  </form>
+</div>{{end}}

@@ -1,0 +1,12 @@
+{{define "title"}}{{t "consent.title"}}{{end}}
+{{define "content"}}<div class="card narrow">
+  <h1 data-e2e="consent-text-title">{{t "consent.heading" .D.App}}</h1>
+  <p class="muted small" data-e2e="consent-text-host">{{t "consent.host" .D.Host}}</p>
+  <p>{{t "consent.intro"}}</p>
+  <ul data-e2e="consent-list-scopes">{{range .D.Scopes}}<li data-e2e="consent-item-{{e2e .Name}}">{{.Text}}</li>{{end}}</ul>
+  <form method="post" action="/consent" class="row">
+    {{template "csrf" .}}{{template "cont" .}}
+    <button class="btn btn-primary" type="submit" name="decision" value="allow" data-e2e="consent-btn-allow">{{t "consent.allow"}}</button>
+    <button class="btn" type="submit" name="decision" value="deny" data-e2e="consent-btn-deny">{{t "consent.deny"}}</button>
+  </form>
+</div>{{end}}

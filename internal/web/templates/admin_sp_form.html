@@ -1,0 +1,11 @@
+{{define "title"}}{{t "admin.sps.new"}}{{end}}
+{{define "content"}}{{template "admin-tabs" .}}
+<div class="card">
+  <h1>{{t "admin.sps.new"}}</h1>
+  {{template "error-alert" .D.Error}}
+  <form method="post" action="/admin/saml">
+    {{template "csrf" .}}
+    {{template "sp-fields" .}}
+    <button class="btn btn-primary" type="submit" data-e2e="sp-btn-create">{{t "admin.create"}}</button>
+  </form>
+</div>{{end}}

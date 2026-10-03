@@ -1,0 +1,54 @@
+{{define "csrf"}}<input type="hidden" name="csrf" value="{{.CSRF}}">{{end}}
+
+{{define "cont"}}{{if .D.C}}<input type="hidden" name="c" value="{{.D.C}}">{{end}}{{end}}
+
+{{define "error-alert"}}{{if .}}<div class="alert-error" role="alert" data-e2e="form-text-error">{{.}}</div>{{end}}{{end}}
+
+{{define "app-note"}}{{if .D.App}}<p class="muted" data-e2e="flow-text-app">{{t "flow.continue_to" .D.App}}</p>{{end}}{{end}}
+
+{{define "admin-tabs"}}<nav class="tabs" aria-label="{{t "admin.tabs"}}">
+  <a href="/admin/clients" data-e2e="admin-tab-clients"{{if eq .D.Tab "clients"}} aria-current="page"{{end}}>{{t "admin.tab.clients"}}</a>
+  {{if .D.SAML}}<a href="/admin/saml" data-e2e="admin-tab-saml"{{if eq .D.Tab "saml"}} aria-current="page"{{end}}>{{t "admin.tab.saml"}}</a>{{end}}
+  <a href="/admin/keys" data-e2e="admin-tab-keys"{{if eq .D.Tab "keys"}} aria-current="page"{{end}}>{{t "admin.tab.keys"}}</a>
+  <a href="/admin/users" data-e2e="admin-tab-users"{{if eq .D.Tab "users"}} aria-current="page"{{end}}>{{t "admin.tab.users"}}</a>
+  <a href="/admin/audit" data-e2e="admin-tab-audit"{{if eq .D.Tab "audit"}} aria-current="page"{{end}}>{{t "admin.tab.audit"}}</a>
+</nav>{{end}}
+
+{{define "check"}}<div class="check"><input id="{{.ID}}" name="{{.Name}}" type="checkbox" value="1"{{if .On}} checked{{end}} data-e2e="form-check-{{e2e .Name}}"><label for="{{.ID}}">{{t .Label}}{{if .Hint}} <span class="hint">{{t .Hint}}</span>{{end}}</label></div>{{end}}
+
+{{define "client-fields"}}{{$f := .D.F}}
+<div class="field"><label for="c-name">{{t "admin.client.name"}}</label><input id="c-name" name="name" type="text" maxlength="100" required value="{{$f.Name}}" data-e2e="client-input-name"></div>
+{{if not .D.Client}}<fieldset class="field"><legend class="label">{{t "admin.client.kind"}}</legend>
+  <div class="check"><input id="c-kind-c" name="kind" type="radio" value="confidential"{{if eq $f.Kind "confidential"}} checked{{end}} data-e2e="client-radio-confidential"><label for="c-kind-c">{{t "admin.kind.confidential"}} <span class="hint">{{t "admin.kind.confidential_hint"}}</span></label></div>
+  <div class="check"><input id="c-kind-p" name="kind" type="radio" value="public"{{if eq $f.Kind "public"}} checked{{end}} data-e2e="client-radio-public"><label for="c-kind-p">{{t "admin.kind.public"}} <span class="hint">{{t "admin.kind.public_hint"}}</span></label></div>
+</fieldset>{{end}}
+<div class="field"><label for="c-redirects">{{t "admin.client.redirects"}}</label><textarea id="c-redirects" name="redirect_uris" rows="3" required data-e2e="client-input-redirects">{{$f.Redirects}}</textarea><span class="hint">{{t "admin.client.redirects_hint"}}</span></div>
+<div class="field"><label for="c-postlogout">{{t "admin.client.post_logout"}}</label><textarea id="c-postlogout" name="post_logout_uris" rows="2" data-e2e="client-input-post-logout">{{$f.PostLogout}}</textarea></div>
+<fieldset class="field"><legend class="label">{{t "admin.client.scopes"}}</legend>
+  {{range .D.AllScopes}}<div class="check"><input id="c-scope-{{.}}" name="scopes" type="checkbox" value="{{.}}"{{if has $f.Scopes .}} checked{{end}} data-e2e="client-check-scope-{{e2e .}}"><label for="c-scope-{{.}}">{{.}}</label></div>{{end}}
+</fieldset>
+<div class="field"><label for="c-groups">{{t "admin.client.groups"}}</label><textarea id="c-groups" name="groups" rows="3" data-e2e="client-input-groups">{{$f.Groups}}</textarea><span class="hint">{{t "admin.groups_hint"}}</span></div>
+{{template "check" (dict "ID" "c-allall" "Name" "allow_all" "On" $f.AllowAll "Label" "admin.allow_all" "Hint" "admin.allow_all_hint")}}
+<div class="field"><label for="c-gclaim">{{t "admin.client.groups_claim"}}</label><select id="c-gclaim" name="groups_claim" data-e2e="client-select-groups-claim">
+  <option value="none"{{if eq $f.GroupsClaim "none"}} selected{{end}}>{{t "admin.groups_claim.none"}}</option>
+  <option value="names"{{if eq $f.GroupsClaim "names"}} selected{{end}}>{{t "admin.groups_claim.names"}}</option>
+  <option value="sids"{{if eq $f.GroupsClaim "sids"}} selected{{end}}>{{t "admin.groups_claim.sids"}}</option>
+</select></div>
+<div class="field"><label for="c-gfilter">{{t "admin.client.groups_filter"}}</label><textarea id="c-gfilter" name="groups_filter" rows="2" data-e2e="client-input-groups-filter">{{$f.GroupsFilter}}</textarea><span class="hint">{{t "admin.client.groups_filter_hint"}}</span></div>
+{{template "check" (dict "ID" "c-first" "Name" "first_party" "On" $f.FirstParty "Label" "admin.client.first_party" "Hint" "admin.client.first_party_hint")}}
+{{template "check" (dict "ID" "c-mfa" "Name" "require_mfa" "On" $f.RequireMFA "Label" "admin.require_mfa" "Hint" "")}}{{end}}
+
+{{define "sp-fields"}}{{$f := .D.F}}
+<div class="field"><label for="s-name">{{t "admin.sp.name"}}</label><input id="s-name" name="name" type="text" maxlength="100" required value="{{$f.Name}}" data-e2e="sp-input-name"></div>
+<div class="field"><label for="s-meta">{{t "admin.sp.metadata"}}</label><textarea id="s-meta" name="metadata" rows="4" data-e2e="sp-input-metadata">{{$f.Metadata}}</textarea><span class="hint">{{t "admin.sp.metadata_hint"}}</span></div>
+{{if not .D.SP}}<div class="field"><label for="s-entity">{{t "admin.sp.entity_id"}}</label><input id="s-entity" name="entity_id" type="text" maxlength="1024" value="{{$f.EntityID}}" data-e2e="sp-input-entity-id"><span class="hint">{{t "admin.sp.entity_hint"}}</span></div>{{end}}
+<div class="field"><label for="s-acs">{{t "admin.sp.acs"}}</label><textarea id="s-acs" name="acs_urls" rows="2" data-e2e="sp-input-acs">{{$f.ACS}}</textarea></div>
+<div class="field"><label for="s-fmt">{{t "admin.sp.nameid_format"}}</label><select id="s-fmt" name="nameid_format" data-e2e="sp-select-nameid-format">{{range .D.Formats}}<option value="{{.}}"{{if eq . $f.NameIDFormat}} selected{{end}}>{{.}}</option>{{end}}</select></div>
+<div class="field"><label for="s-src">{{t "admin.sp.nameid_source"}}</label><select id="s-src" name="nameid_source" data-e2e="sp-select-nameid-source">{{range .D.NameIDSources}}<option value="{{.}}"{{if eq . $f.NameIDSource}} selected{{end}}>{{.}}</option>{{end}}</select></div>
+<div class="field"><label for="s-attrs">{{t "admin.sp.attributes"}}</label><textarea id="s-attrs" name="attributes" rows="4" data-e2e="sp-input-attributes">{{$f.Attributes}}</textarea><span class="hint">{{t "admin.sp.attributes_hint" (join .D.Sources ", ")}}</span></div>
+<div class="field"><label for="s-groups">{{t "admin.sp.groups"}}</label><textarea id="s-groups" name="groups" rows="3" data-e2e="sp-input-groups">{{$f.Groups}}</textarea><span class="hint">{{t "admin.groups_hint"}}</span></div>
+{{template "check" (dict "ID" "s-allall" "Name" "allow_all" "On" $f.AllowAll "Label" "admin.allow_all" "Hint" "admin.allow_all_hint")}}
+{{template "check" (dict "ID" "s-enc" "Name" "encrypt" "On" $f.Encrypt "Label" "admin.sp.encrypt" "Hint" "admin.sp.encrypt_hint")}}
+{{template "check" (dict "ID" "s-idp" "Name" "idp_initiated" "On" $f.IdPInitiated "Label" "admin.sp.idp_initiated" "Hint" "")}}
+<div class="field"><label for="s-relay">{{t "admin.sp.relay"}}</label><input id="s-relay" name="default_relay" type="text" maxlength="512" value="{{$f.DefaultRelay}}" data-e2e="sp-input-relay"></div>
+{{template "check" (dict "ID" "s-mfa" "Name" "require_mfa" "On" $f.RequireMFA "Label" "admin.require_mfa" "Hint" "")}}{{end}}

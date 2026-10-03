@@ -1,0 +1,6 @@
+{{define "title"}}{{t "loggedout.title"}}{{end}}
+{{define "content"}}<div class="card narrow" data-e2e="loggedout-card">
+  <h1>{{t "loggedout.title"}}</h1>
+  <p>{{t "loggedout.message"}}</p>
+  <div class="actions"><a class="btn" href="/login" data-e2e="loggedout-link-signin">{{t "signin.title"}}</a></div>
+</div>{{end}}

@@ -1,0 +1,17 @@
+{{define "title"}}{{t "admin.sps.title"}}{{end}}
+{{define "content"}}{{template "admin-tabs" .}}
+<div class="card">
+  <div class="row"><h1 class="grow">{{t "admin.sps.title"}}</h1><a class="btn btn-primary" href="/admin/saml/new" data-e2e="sps-link-new">{{t "admin.sps.new"}}</a></div>
+  <dl class="props">
+    <dt>{{t "admin.sps.metadata_url"}}</dt><dd class="mono small" data-e2e="sps-text-metadata">{{.D.MetadataURL}}</dd>
+    <dt>{{t "admin.sps.sso_url"}}</dt><dd class="mono small">{{.D.SSOURL}}</dd>
+  </dl>
+  {{if .D.SPs}}<div class="table-wrap"><table class="table" data-e2e="sps-table">
+    <thead><tr><th>{{t "admin.sp.name"}}</th><th>{{t "admin.sp.entity_id"}}</th><th>{{t "admin.status"}}</th></tr></thead>
+    <tbody>{{range .D.SPs}}<tr>
+      <td><a href="/admin/saml/sp?id={{.EntityID}}" data-e2e="sps-link-{{e2e .Name}}">{{.Name}}</a></td>
+      <td class="mono small">{{.EntityID}}</td>
+      <td>{{if .Enabled}}<span class="badge badge-ok">{{t "admin.enabled"}}</span>{{else}}<span class="badge badge-danger">{{t "admin.disabled"}}</span>{{end}}</td>
+    </tr>{{end}}</tbody>
+  </table></div>{{else}}<p class="muted" data-e2e="sps-text-empty">{{t "admin.sps.empty"}}</p>{{end}}
+</div>{{end}}

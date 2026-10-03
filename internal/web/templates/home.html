@@ -1,0 +1,15 @@
+{{define "title"}}{{t "home.title"}}{{end}}
+{{define "content"}}<div class="card narrow">
+  <h1>{{t "home.hello" .D.UserName}}</h1>
+  <dl class="props">
+    <dt>{{t "home.username"}}</dt><dd data-e2e="home-text-username">{{.D.SAM}}</dd>
+    {{if .D.Mail}}<dt>{{t "home.email"}}</dt><dd data-e2e="home-text-email">{{.D.Mail}}</dd>{{end}}
+    <dt>{{t "home.mfa"}}</dt><dd data-e2e="home-text-mfa">{{if .D.Enrolled}}{{t "home.mfa_on"}}{{else}}{{t "home.mfa_off"}}{{end}}</dd>
+  </dl>
+  {{if .D.CanEnroll}}<div class="actions"><a class="btn" href="/login/enroll" data-e2e="home-link-enroll">{{t "home.enroll"}}</a></div>{{end}}
+</div>
+{{if .D.Apps}}<div class="card narrow">
+  <h2>{{t "home.apps"}}</h2>
+  <ul class="applist">{{range .D.Apps}}<li><form method="post" action="/saml/start">{{template "csrf" $}}<input type="hidden" name="sp" value="{{.EntityID}}"><button class="btn btn-block" type="submit" data-e2e="home-btn-app-{{e2e .Name}}">{{.Name}}</button></form></li>{{end}}</ul>
+</div>{{end}}
+{{if .D.Admin}}<div class="card narrow"><a class="btn btn-block" href="/admin" data-e2e="home-link-admin">{{t "home.admin"}}</a></div>{{end}}{{end}}

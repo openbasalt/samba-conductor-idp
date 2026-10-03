@@ -1,0 +1,10 @@
+{{define "title"}}{{t "logout.title"}}{{end}}
+{{define "content"}}<div class="card narrow">
+  <h1>{{t "logout.title"}}</h1>
+  <p>{{t "logout.confirm"}}</p>
+  <form method="post" action="/logout/rp" class="row">
+    {{template "csrf" .}}<input type="hidden" name="t" value="{{.D.T}}">
+    <button class="btn btn-primary" type="submit" name="decision" value="signout" data-e2e="logout-btn-confirm">{{t "logout.yes"}}</button>
+    <button class="btn" type="submit" name="decision" value="stay" data-e2e="logout-btn-stay">{{t "logout.no"}}</button>
+  </form>
+</div>{{end}}

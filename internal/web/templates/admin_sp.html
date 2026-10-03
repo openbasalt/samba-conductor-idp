@@ -1,0 +1,30 @@
+{{define "title"}}{{.D.SP.Name}}{{end}}
+{{define "content"}}{{template "admin-tabs" .}}
+<div class="card">
+  <h1 data-e2e="sp-text-name">{{.D.SP.Name}}</h1>
+  <dl class="props">
+    <dt>{{t "admin.sp.entity_id"}}</dt><dd class="mono small" data-e2e="sp-text-entity-id">{{.D.SP.EntityID}}</dd>
+    <dt>{{t "admin.status"}}</dt><dd data-e2e="sp-text-status">{{if .D.SP.Enabled}}{{t "admin.enabled"}}{{else}}{{t "admin.disabled"}}{{end}}</dd>
+    <dt>{{t "admin.sp.cert"}}</dt><dd>{{if .D.F.HasCert}}{{t "form.yes"}}{{else}}{{t "form.no"}}{{end}}</dd>
+    {{if .D.GroupLabels}}<dt>{{t "admin.sp.groups"}}</dt><dd>{{join .D.GroupLabels ", "}}</dd>{{end}}
+    <dt>{{t "admin.updated"}}</dt><dd>{{time .D.SP.UpdatedAt}}</dd>
+  </dl>
+  <form method="post" action="/admin/saml/sp/toggle" class="actions">{{template "csrf" .}}<input type="hidden" name="id" value="{{.D.SP.EntityID}}"><button class="btn" type="submit" data-e2e="sp-btn-toggle">{{if .D.SP.Enabled}}{{t "admin.disable"}}{{else}}{{t "admin.enable"}}{{end}}</button></form>
+</div>
+<div class="card">
+  <h2>{{t "admin.edit"}}</h2>
+  {{template "error-alert" .D.Error}}
+  <form method="post" action="/admin/saml/sp">
+    {{template "csrf" .}}<input type="hidden" name="id" value="{{.D.SP.EntityID}}">
+    {{template "sp-fields" .}}
+    <button class="btn btn-primary" type="submit" data-e2e="sp-btn-save">{{t "admin.save"}}</button>
+  </form>
+</div>
+<div class="card">
+  <h2>{{t "admin.delete"}}</h2>
+  <form method="post" action="/admin/saml/sp/delete">
+    {{template "csrf" .}}<input type="hidden" name="id" value="{{.D.SP.EntityID}}">
+    <div class="field"><label for="confirm">{{t "admin.delete_confirm"}}</label><input id="confirm" name="confirm" type="text" autocomplete="off" required data-e2e="sp-input-confirm"><span class="hint mono">{{.D.SP.EntityID}}</span></div>
+    <button class="btn btn-danger" type="submit" data-e2e="sp-btn-delete">{{t "admin.delete"}}</button>
+  </form>
+</div>{{end}}

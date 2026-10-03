@@ -1,0 +1,19 @@
+{{define "title"}}{{t "admin.audit.title"}}{{end}}
+{{define "content"}}{{template "admin-tabs" .}}
+<div class="card">
+  <h1>{{t "admin.audit.title"}}</h1>
+  {{if eq .D.Verify.BrokenAt 0}}<div class="alert-info" data-e2e="audit-text-chain-ok">{{t "admin.audit.chain_ok" .D.Verify.Rows}}</div>{{else}}<div class="alert-error" data-e2e="audit-text-chain-broken">{{t "admin.audit.chain_broken" .D.Verify.BrokenAt .D.Verify.Reason}}</div>{{end}}
+  <form method="get" action="/admin/audit" class="filters">
+    <div class="field"><label for="a-actor">{{t "admin.audit.actor"}}</label><input id="a-actor" name="actor" type="text" value="{{.D.F.Actor}}" data-e2e="audit-input-actor"></div>
+    <div class="field"><label for="a-action">{{t "admin.audit.action"}}</label><input id="a-action" name="action" type="text" value="{{.D.F.Action}}" data-e2e="audit-input-action"></div>
+    <div class="field"><label for="a-result">{{t "admin.audit.result"}}</label><select id="a-result" name="result" data-e2e="audit-select-result"><option value="">—</option>{{range (list "ok" "denied" "failed" "pending")}}<option value="{{.}}"{{if eq . $.D.F.Result}} selected{{end}}>{{.}}</option>{{end}}</select></div>
+    <button class="btn" type="submit" data-e2e="audit-btn-filter">{{t "admin.audit.filter"}}</button>
+  </form>
+  <div class="table-wrap"><table class="table" data-e2e="audit-table">
+    <thead><tr><th>{{t "admin.audit.time"}}</th><th>{{t "admin.audit.actor"}}</th><th>{{t "admin.audit.action"}}</th><th>{{t "admin.audit.target"}}</th><th>{{t "admin.audit.result"}}</th><th>{{t "admin.audit.detail"}}</th></tr></thead>
+    <tbody>{{range .D.Events}}<tr>
+      <td class="small">{{time .Time}}</td><td>{{.ActorName}}</td><td class="mono small">{{.Action}}</td><td class="small">{{.Target}}</td><td>{{.Result}}</td><td class="small">{{.Detail}}</td>
+    </tr>{{end}}</tbody>
+  </table></div>
+  {{if .D.More}}<p class="muted small">{{t "admin.audit.more"}}</p>{{end}}
+</div>{{end}}

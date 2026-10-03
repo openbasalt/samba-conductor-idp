@@ -1,0 +1,10 @@
+{{define "title"}}{{t "recovery.title"}}{{end}}
+{{define "content"}}<div class="card narrow">
+  <h1>{{t "recovery.title"}}</h1>
+  <p>{{t "recovery.intro"}}</p>
+  <ul class="codes" data-e2e="recovery-list-codes">{{range .D.Codes}}<li class="mono" data-e2e="recovery-text-code">{{.}}</li>{{end}}</ul>
+  <form method="post" action="/login/continue">
+    {{template "csrf" .}}{{template "cont" .}}
+    <button class="btn btn-primary btn-block" type="submit" data-e2e="recovery-btn-continue">{{if .D.App}}{{t "flow.continue_to" .D.App}}{{else}}{{t "recovery.saved"}}{{end}}</button>
+  </form>
+</div>{{end}}

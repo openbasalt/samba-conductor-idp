@@ -1,0 +1,21 @@
+{{define "title"}}{{t "admin.users.title"}}{{end}}
+{{define "content"}}{{template "admin-tabs" .}}
+<div class="card">
+  <h1>{{t "admin.users.title"}}</h1>
+  {{if not .D.Local}}<p class="muted" data-e2e="users-text-conductor">{{t "admin.users.conductor"}}</p>{{else}}
+  {{if .D.Link}}<div class="alert-info" data-e2e="users-text-link"><p>{{t "admin.users.link_for" .D.LinkUser}}</p><p class="mono secret">{{.D.Link}}</p><p class="small">{{t "admin.users.link_once"}}</p></div>{{end}}
+  <form method="post" action="/admin/users/mfa-reset" class="card">
+    {{template "csrf" .}}
+    <h2>{{t "admin.users.reset"}}</h2>
+    <p class="small muted">{{t "admin.users.reset_hint"}}</p>
+    <div class="field"><label for="u-reset">{{t "signin.username"}}</label><input id="u-reset" name="username" type="text" required autocomplete="off" data-e2e="users-input-reset"></div>
+    <button class="btn btn-danger" type="submit" data-e2e="users-btn-reset">{{t "admin.users.reset"}}</button>
+  </form>
+  <form method="post" action="/admin/users/enroll-link" class="card">
+    {{template "csrf" .}}
+    <h2>{{t "admin.users.link"}}</h2>
+    <p class="small muted">{{t "admin.users.link_hint"}}</p>
+    <div class="field"><label for="u-link">{{t "signin.username"}}</label><input id="u-link" name="username" type="text" required autocomplete="off" data-e2e="users-input-link"></div>
+    <button class="btn" type="submit" data-e2e="users-btn-link">{{t "admin.users.link"}}</button>
+  </form>{{end}}
+</div>{{end}}

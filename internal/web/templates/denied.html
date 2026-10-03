@@ -1,0 +1,6 @@
+{{define "title"}}{{t "denied.title"}}{{end}}
+{{define "content"}}<div class="card narrow" data-e2e="denied-card">
+  <h1>{{t "denied.title"}}</h1>
+  <p data-e2e="denied-text-message">{{t "denied.message" .D.App}}</p>
+  <div class="actions"><a class="btn" href="/" data-e2e="denied-link-home">{{t "error.home"}}</a></div>
+</div>{{end}}

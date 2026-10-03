@@ -1,0 +1,34 @@
+{{define "title"}}{{.D.Client.Name}}{{end}}
+{{define "content"}}{{template "admin-tabs" .}}
+<div class="card">
+  <h1 data-e2e="client-text-name">{{.D.Client.Name}}</h1>
+  <dl class="props">
+    <dt>{{t "admin.client.id"}}</dt><dd class="mono" data-e2e="client-text-id">{{.D.Client.ID}}</dd>
+    <dt>{{t "admin.client.kind"}}</dt><dd>{{t (print "admin.kind." .D.Client.Kind)}}</dd>
+    <dt>{{t "admin.status"}}</dt><dd data-e2e="client-text-status">{{if .D.Client.Enabled}}{{t "admin.enabled"}}{{else}}{{t "admin.disabled"}}{{end}}</dd>
+    <dt>{{t "admin.client.discovery"}}</dt><dd class="mono small">{{.D.Issuer}}/.well-known/openid-configuration</dd>
+    {{if .D.GroupLabels}}<dt>{{t "admin.client.groups"}}</dt><dd>{{join .D.GroupLabels ", "}}</dd>{{end}}
+    <dt>{{t "admin.updated"}}</dt><dd>{{time .D.Client.UpdatedAt}}</dd>
+  </dl>
+  <div class="actions">
+    {{if eq .D.Client.Kind "confidential"}}<form method="post" action="/admin/clients/{{.D.Client.ID}}/rotate">{{template "csrf" .}}<button class="btn" type="submit" data-e2e="client-btn-rotate">{{t "admin.client.rotate"}}</button></form>{{end}}
+    <form method="post" action="/admin/clients/{{.D.Client.ID}}/toggle">{{template "csrf" .}}<button class="btn" type="submit" data-e2e="client-btn-toggle">{{if .D.Client.Enabled}}{{t "admin.disable"}}{{else}}{{t "admin.enable"}}{{end}}</button></form>
+  </div>
+</div>
+<div class="card">
+  <h2>{{t "admin.edit"}}</h2>
+  {{template "error-alert" .D.Error}}
+  <form method="post" action="/admin/clients/{{.D.Client.ID}}">
+    {{template "csrf" .}}
+    {{template "client-fields" .}}
+    <button class="btn btn-primary" type="submit" data-e2e="client-btn-save">{{t "admin.save"}}</button>
+  </form>
+</div>
+<div class="card">
+  <h2>{{t "admin.delete"}}</h2>
+  <form method="post" action="/admin/clients/{{.D.Client.ID}}/delete">
+    {{template "csrf" .}}
+    <div class="field"><label for="confirm">{{t "admin.delete_confirm"}}</label><input id="confirm" name="confirm" type="text" autocomplete="off" required data-e2e="client-input-confirm"><span class="hint mono">{{.D.Client.ID}}</span></div>
+    <button class="btn btn-danger" type="submit" data-e2e="client-btn-delete">{{t "admin.delete"}}</button>
+  </form>
+</div>{{end}}

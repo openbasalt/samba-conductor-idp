@@ -1,0 +1,35 @@
+{{define "layout"}}<!doctype html>
+<html lang="{{.Lang}}"{{if .Theme}} data-theme="{{.Theme}}"{{end}}>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex, nofollow">
+<title>{{template "title" .}} · {{.Product}}</title>
+<link rel="stylesheet" href="/static/app.css?v={{.Version}}">
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+</head>
+<body>
+<a class="skip" href="#main">{{t "a11y.skip"}}</a>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="brand" href="/" data-e2e="nav-link-home"><img src="/static/logo.svg" alt="" width="28" height="28"><span>{{.Product}}</span></a>
+    {{if .User}}<span class="who" data-e2e="nav-text-user">{{.User.Name}}</span>
+    <form method="post" action="/logout" class="topbar-form">{{template "csrf" .}}<button class="btn btn-small" type="submit" data-e2e="nav-btn-signout">{{t "nav.signout"}}</button></form>{{end}}
+  </div>
+</header>
+<div class="shell">
+<main id="main">
+{{range .Flashes}}<div class="flash flash-{{.Kind}}" role="status" data-e2e="flash-{{.Kind}}">{{.Msg}}</div>{{end}}
+{{template "content" .}}
+</main>
+</div>
+<footer>
+  <div class="prefs">
+    <span>{{t "footer.language"}}: <a href="{{pref .Query "lang" "en"}}" data-e2e="footer-link-lang-en" lang="en">English</a> · <a href="{{pref .Query "lang" "pt-BR"}}" data-e2e="footer-link-lang-pt-br" lang="pt-BR">Português (Brasil)</a></span>
+    <span>{{t "footer.theme"}}: <a href="{{pref .Query "theme" "light"}}" data-e2e="footer-link-theme-light">{{t "footer.theme.light"}}</a> · <a href="{{pref .Query "theme" "dark"}}" data-e2e="footer-link-theme-dark">{{t "footer.theme.dark"}}</a> · <a href="{{pref .Query "theme" "system"}}" data-e2e="footer-link-theme-system">{{t "footer.theme.system"}}</a></span>
+  </div>
+  <div>{{t "footer.product"}} {{.Version}}</div>
+</footer>
+</body>
+</html>{{end}}

@@ -1,0 +1,22 @@
+{{define "title"}}{{t "admin.keys.title"}}{{end}}
+{{define "content"}}{{template "admin-tabs" .}}
+<div class="card">
+  <h1>{{t "admin.keys.title"}}</h1>
+  <p class="muted">{{t "admin.keys.intro" .D.RotateDays .D.OverlapHours}}</p>
+  <div class="table-wrap"><table class="table" data-e2e="keys-table">
+    <thead><tr><th>{{t "admin.keys.purpose"}}</th><th>{{t "admin.keys.id"}}</th><th>{{t "admin.keys.created"}}</th><th>{{t "admin.keys.retire"}}</th></tr></thead>
+    <tbody>{{range .D.Keys}}<tr data-e2e="keys-row-{{.Purpose}}">
+      <td>{{.Purpose}}{{if .Signing}} <span class="badge badge-ok">{{t "admin.keys.signing"}}</span>{{end}}</td>
+      <td class="mono small">{{.ID}}</td><td>{{time .Created}}</td><td>{{time .RetireAt}}</td>
+    </tr>{{end}}</tbody>
+  </table></div>
+  <div class="actions">
+    <form method="post" action="/admin/keys/rotate">{{template "csrf" .}}<input type="hidden" name="purpose" value="oidc"><button class="btn" type="submit" data-e2e="keys-btn-rotate-oidc">{{t "admin.keys.rotate_oidc"}}</button></form>
+  </div>
+  {{if .D.SAML}}<form method="post" action="/admin/keys/rotate" class="card">
+    {{template "csrf" .}}<input type="hidden" name="purpose" value="saml">
+    <p class="small">{{t "admin.keys.saml_hint"}}</p>
+    {{template "check" (dict "ID" "k-imm" "Name" "immediate" "On" false "Label" "admin.keys.immediate" "Hint" "admin.keys.immediate_hint")}}
+    <button class="btn" type="submit" data-e2e="keys-btn-rotate-saml">{{t "admin.keys.rotate_saml"}}</button>
+  </form>{{end}}
+</div>{{end}}
