@@ -51,8 +51,9 @@ overrides:
     depends:
       - systemd
       # The SELinux policy wherever the targeted policy is installed
-      # (Fedora, Basalt OS): installed first, so the files get their labels.
-      - (conductor-idp-selinux if selinux-policy-targeted)
+      # (Fedora, Basalt OS): installed first, so the files get their labels;
+      # the same version, so an upgrade of the package upgrades its policy.
+      - (conductor-idp-selinux = ${PKG_VERSION}-${PKG_REVISION} if selinux-policy-targeted)
     suggests:
       - conductor
     scripts:

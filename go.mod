@@ -13,7 +13,7 @@ require (
 	github.com/go-jose/go-jose/v4 v4.1.5
 	github.com/go-ldap/ldap/v3 v3.4.14
 	github.com/google/uuid v1.6.0
-	github.com/openbasalt/samba-conductor-ad v0.0.0-20261003144929-e3e142131ee5
+	github.com/openbasalt/samba-conductor-ad v0.0.0-20261004043531-75ce88dcaaea
 	github.com/russellhaering/goxmldsig v1.6.1
 	github.com/zitadel/oidc/v3 v3.51.11
 	modernc.org/sqlite v1.60.1
