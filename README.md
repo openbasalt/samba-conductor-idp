@@ -48,6 +48,7 @@ crewjam SAML SP, desktop and mobile ([`docs/usage-p4.md`](docs/usage-p4.md)).
 ## Documentation
 
 - [Install and operate](docs/install.md) (config reference: [`idp.toml.example`](idp.toml.example))
+- [Install on Basalt OS / Fedora (RPM, SELinux)](docs/install-fedora.md)
 - [Decisions](docs/decisions.md)
 - [P4 lab run](docs/usage-p4.md) and [screenshots](docs/screenshots/)
 

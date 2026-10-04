@@ -1,0 +1,12 @@
+#!/bin/sh
+# %pre of conductor-idp (RPM): the system user exists before the payload is
+# unpacked, because /etc/conductor-idp and /var/lib/conductor-idp are owned
+# by it. The entry is the one in /usr/lib/sysusers.d/conductor-idp.conf
+# (build.sh checks that they match); systemd-sysusers reads it from stdin,
+# as Fedora's %sysusers_create_compat does.
+if [ -x /usr/bin/systemd-sysusers ]; then
+	/usr/bin/systemd-sysusers --replace=/usr/lib/sysusers.d/conductor-idp.conf - <<'SYSUSERS' || :
+u conductor-idp - "Samba Conductor IdP" /var/lib/conductor-idp /usr/sbin/nologin
+SYSUSERS
+fi
+exit 0

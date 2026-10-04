@@ -1,0 +1,23 @@
+conductor-idp-selinux: SELinux policy for conductor-idp
+=======================================================
+
+The module "conductor_idp" (targeted policy, priority 200) confines
+/usr/bin/conductor-idp (conductor-idp.service, user conductor-idp) in
+conductor_idp_t.
+
+File types:
+
+  conductor_idp_conf_t     /etc/conductor-idp (idp.toml, domain CA, tls/)
+  conductor_idp_cred_t     /etc/conductor-idp/credentials (read by systemd only)
+  conductor_idp_var_lib_t  /var/lib/conductor-idp (clients, keys, audit log)
+
+conductor-idp listens on its HTTPS port (9443 by default, which the base
+policy types pki_ca_port_t; http_port_t ports are allowed too) and connects
+to the domain controllers over LDAP/LDAPS and Kerberos. Another port:
+
+  semanage port -a -t http_port_t -p tcp 9444
+
+Troubleshooting:
+
+  ausearch -m AVC,USER_AVC -ts recent -c conductor-idp
+  semanage permissive -a conductor_idp_t     (and -d to revert)

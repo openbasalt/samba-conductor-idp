@@ -1,0 +1,117 @@
+policy_module(conductor_idp, 1.0.0)
+
+# SELinux policy of conductor-idp (conductor_idp_t, the unprivileged
+# "conductor-idp" user): its configuration and state, its HTTPS port, and
+# LDAPS and Kerberos to the domain controllers. A mandatory layer under the
+# systemd sandbox of deploy/systemd/conductor-idp.service.
+
+########################################
+#
+# Declarations
+#
+
+type conductor_idp_t;
+type conductor_idp_exec_t;
+init_daemon_domain(conductor_idp_t, conductor_idp_exec_t)
+
+# /etc/conductor-idp: idp.toml, the domain CA, TLS certificate and key.
+type conductor_idp_conf_t;
+files_config_file(conductor_idp_conf_t)
+
+# /etc/conductor-idp/credentials: the master key and the service account's
+# password. Only systemd reads them (LoadCredential=).
+type conductor_idp_cred_t;
+files_type(conductor_idp_cred_t)
+
+# /var/lib/conductor-idp: clients, sealed signing keys, sessions, audit log.
+type conductor_idp_var_lib_t;
+files_type(conductor_idp_var_lib_t)
+
+type conductor_idp_tmp_t;
+files_tmp_file(conductor_idp_tmp_t)
+
+########################################
+#
+# conductor-idp local policy
+#
+
+allow conductor_idp_t self:process { getsched setsched signal_perms };
+allow conductor_idp_t self:fifo_file rw_fifo_file_perms;
+allow conductor_idp_t self:unix_stream_socket create_stream_socket_perms;
+allow conductor_idp_t self:unix_dgram_socket create_socket_perms;
+allow conductor_idp_t self:netlink_route_socket r_netlink_socket_perms;
+allow conductor_idp_t self:tcp_socket { accept listen create_stream_socket_perms };
+allow conductor_idp_t self:udp_socket create_socket_perms;
+
+read_files_pattern(conductor_idp_t, conductor_idp_conf_t, conductor_idp_conf_t)
+list_dirs_pattern(conductor_idp_t, conductor_idp_conf_t, conductor_idp_conf_t)
+read_lnk_files_pattern(conductor_idp_t, conductor_idp_conf_t, conductor_idp_conf_t)
+
+manage_dirs_pattern(conductor_idp_t, conductor_idp_var_lib_t, conductor_idp_var_lib_t)
+manage_files_pattern(conductor_idp_t, conductor_idp_var_lib_t, conductor_idp_var_lib_t)
+files_search_var_lib(conductor_idp_t)
+
+manage_dirs_pattern(conductor_idp_t, conductor_idp_tmp_t, conductor_idp_tmp_t)
+manage_files_pattern(conductor_idp_t, conductor_idp_tmp_t, conductor_idp_tmp_t)
+files_tmp_filetrans(conductor_idp_t, conductor_idp_tmp_t, { file dir })
+
+kernel_read_system_state(conductor_idp_t)
+kernel_read_kernel_sysctls(conductor_idp_t)
+kernel_read_net_sysctls(conductor_idp_t)
+
+dev_read_sysfs(conductor_idp_t)
+dev_read_urand(conductor_idp_t)
+dev_read_rand(conductor_idp_t)
+
+fs_getattr_all_fs(conductor_idp_t)
+fs_search_cgroup_dirs(conductor_idp_t)
+fs_read_cgroup_files(conductor_idp_t)
+
+files_read_etc_files(conductor_idp_t)
+auth_use_nsswitch(conductor_idp_t)
+miscfiles_read_localization(conductor_idp_t)
+miscfiles_read_generic_certs(conductor_idp_t)
+kerberos_read_config(conductor_idp_t)
+sysnet_dns_name_resolve(conductor_idp_t)
+logging_send_syslog_msg(conductor_idp_t)
+
+# HTTPS (9443 by default, which the base policy types pki_ca_port_t;
+# another port: semanage port -a -t http_port_t).
+corenet_tcp_bind_generic_node(conductor_idp_t)
+corenet_tcp_bind_pki_ca_port(conductor_idp_t)
+corenet_tcp_bind_http_port(conductor_idp_t)
+
+# The domain controllers: LDAP(S) and Kerberos.
+corenet_tcp_connect_ldap_port(conductor_idp_t)
+corenet_tcp_connect_kerberos_port(conductor_idp_t)
+corenet_tcp_connect_kerberos_password_port(conductor_idp_t)
+
+########################################
+#
+# systemd (init_t) reads the credentials for LoadCredential=; nothing else
+# in the policy may.
+#
+
+gen_require(`
+	type init_t;
+')
+list_dirs_pattern(init_t, conductor_idp_cred_t, conductor_idp_cred_t)
+read_files_pattern(init_t, conductor_idp_cred_t, conductor_idp_cred_t)
+
+########################################
+#
+# Started by systemd: the units set NoNewPrivileges=yes, and the services
+# read their credentials from $CREDENTIALS_DIRECTORY (/run/credentials/<unit>,
+# which systemd labels init_var_run_t).
+#
+
+init_nnp_daemon_domain(conductor_idp_t)
+
+gen_require(`
+	type init_var_run_t;
+')
+allow conductor_idp_t init_var_run_t:dir search_dir_perms;
+allow conductor_idp_t init_var_run_t:file read_file_perms;
+
+# SQLite in WAL mode maps its shared-memory index (<db>-shm).
+allow conductor_idp_t conductor_idp_var_lib_t:file map;

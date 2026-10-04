@@ -1,0 +1,31 @@
+conductor-idp for Fedora and Basalt OS
+======================================
+
+Installing the package creates the "conductor-idp" system user
+(sysusers.d), /etc/conductor-idp (root:conductor-idp 0750) with tls/
+(root:conductor-idp 0750) and credentials/ (root 0700), the configuration
+file /etc/conductor-idp/idp.toml (example values, 0640) and
+/var/lib/conductor-idp. It does not enable or start anything. Where the
+targeted SELinux policy is installed, conductor-idp-selinux comes with it
+and the service runs in conductor_idp_t.
+
+  1. A read-only AD service account (docs/install.md, step 1).
+  2. TLS files in /etc/conductor-idp/tls/ and the domain CA in
+     /etc/conductor-idp/domain-ca.pem.
+  3. sudo conductor-idp gen-key /etc/conductor-idp/credentials/master-key
+     and the service account's password in credentials/ad-password (0600).
+  4. Edit /etc/conductor-idp/idp.toml (issuer, realm, service account).
+  5. sudo systemctl enable --now conductor-idp
+  6. sudo firewall-cmd --permanent --add-port=9443/tcp && sudo firewall-cmd --reload
+
+The default port 9443 has the SELinux type pki_ca_port_t, which the policy
+lets conductor-idp use. Another port needs a type the policy allows:
+  sudo semanage port -a -t http_port_t -p tcp <port>
+
+Upgrades restart the service when it is running. "dnf remove
+conductor-idp" stops and disables it and removes the packaged files; it
+keeps the master key and the service account's password in credentials/,
+the TLS files, /var/lib/conductor-idp (clients, signing keys, audit log)
+and the system user. Delete them by hand when they are no longer needed.
+
+Full guide: https://github.com/openbasalt/samba-conductor-idp/blob/main/docs/install-fedora.md

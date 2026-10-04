@@ -5,8 +5,9 @@
 [Unit]
 Description=Samba Conductor IdP (OIDC and SAML)
 Documentation=https://github.com/openbasalt/samba-conductor-idp/blob/main/docs/install.md
-# samba-ad-dc only matters when the idp runs on a DC (ignored elsewhere).
-After=network-online.target samba-ad-dc.service
+# The AD DC unit (samba-ad-dc on Debian and Ubuntu, samba on Fedora and
+# Basalt OS) only matters when the idp runs on a DC (ignored elsewhere).
+After=network-online.target samba-ad-dc.service samba.service
 Wants=network-online.target
 
 [Service]

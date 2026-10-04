@@ -1,0 +1,20 @@
+## <summary>Samba Conductor IdP: OpenID Connect and SAML 2.0 identity provider backed by Samba AD.</summary>
+
+########################################
+## <summary>
+##	Execute conductor-idp in the conductor_idp domain.
+## </summary>
+## <param name="domain">
+##	<summary>
+##	Domain allowed to transition.
+##	</summary>
+## </param>
+#
+interface(`conductor_idp_domtrans',`
+	gen_require(`
+		type conductor_idp_t, conductor_idp_exec_t;
+	')
+
+	corecmd_search_bin($1)
+	domtrans_pattern($1, conductor_idp_exec_t, conductor_idp_t)
+')

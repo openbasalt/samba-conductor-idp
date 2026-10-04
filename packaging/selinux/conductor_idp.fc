@@ -1,0 +1,8 @@
+# File contexts of the conductor_idp policy module (conductor-idp-selinux).
+/usr/bin/conductor-idp			--	gen_context(system_u:object_r:conductor_idp_exec_t,s0)
+/usr/local/bin/conductor-idp		--	gen_context(system_u:object_r:conductor_idp_exec_t,s0)
+
+/etc/conductor-idp(/.*)?			gen_context(system_u:object_r:conductor_idp_conf_t,s0)
+/etc/conductor-idp/credentials(/.*)?		gen_context(system_u:object_r:conductor_idp_cred_t,s0)
+
+/var/lib/conductor-idp(/.*)?			gen_context(system_u:object_r:conductor_idp_var_lib_t,s0)

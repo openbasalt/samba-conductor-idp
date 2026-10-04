@@ -1,5 +1,7 @@
 # Installing conductor-idp (Debian 13 / Ubuntu 26.04)
 
+Basalt OS and Fedora (RPM packages, SELinux): `install-fedora.md`.
+
 conductor-idp needs LDAPS (636) and Kerberos (88) to a DC. It can run on a
 DC or on any other host. Install it from the Debian package (recommended;
 Ubuntu 24.04 is best effort) or from source. The from-source steps are what
