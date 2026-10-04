@@ -1,10 +1,11 @@
 # Installing conductor-idp on Basalt OS / Fedora
 
-conductor-idp on **Basalt OS** (Fedora 44 based, SELinux enforcing) or
-**Fedora 44**, from the RPM packages, on a domain controller or any host
+conductor-idp on Basalt OS (Fedora 44 based, SELinux enforcing) or
+Fedora 44, from the RPM packages, on a domain controller or any host
 with LDAPS access to one. The steps are those of `docs/install.md`; this
 page lists what differs. The Basalt OS package lab
-(`../planning/lab/basaltlab/` in the planning repository) runs them with
+(see
+[testing.md](https://github.com/openbasalt/samba-conductor-docs/blob/main/testing.md)) runs them with
 SELinux enforcing, including an OpenID Connect sign-in (authorization code
 with PKCE, ID token, userinfo) against Fedora's `samba-dc` (MIT Kerberos).
 

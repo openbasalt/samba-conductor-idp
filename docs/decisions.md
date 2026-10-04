@@ -1,13 +1,12 @@
-# conductor-idp decisions (P4)
+# conductor-idp decisions
 
-Decisions taken while building P4 (spec: `../planning/docs/p4-spec.md`).
-They live here, not in `planning/docs/decisions.md`, while P3 edits that
-file; the orchestrator may merge them later.
+Design decisions of conductor-idp, with their reasons. The design overview
+is [design.md](design.md).
 
 ## D1. Libraries
 
 - OIDC: `github.com/zitadel/oidc/v3` `op` (OpenID certified), v3.51.11, on
-  our own storage, the same pattern as `rc-account` (no code shared).
+  our own storage.
 - SAML: `github.com/crewjam/saml` v0.5.1 with `goxmldsig` raised to v1.6.1
   and `etree` to v1.8.1 (newest releases at the time).
 - SQLite through `modernc.org/sqlite` (CGO off), like conductor.
@@ -74,7 +73,7 @@ The spec prefers one source of truth for 2FA. Decision:
   user's objectGUID, with hashed single-use recovery codes. It is needed
   when the idp runs elsewhere (it only needs LDAPS/Kerberos), and today,
   because conductor does not serve the socket yet.
-- The server side of the socket is **not implemented** (P4 may not change
+- The server side of the socket is not implemented (P4 may not change
   conductor); the client and a fake server test exist. Upstream item for
   conductor.
 - Policy is conductor's: administrators always (one-time enrollment link
@@ -93,7 +92,7 @@ The spec prefers one source of truth for 2FA. Decision:
   after the second factor. The idp keeps no user credential: the password
   is verified with a Kerberos AS exchange (or simple bind fallback) and
   forgotten.
-- `__Host-idp-session` is SameSite=**Lax**, not Strict: relying parties
+- `__Host-idp-session` is SameSite=Lax, not Strict: relying parties
   send the browser here through cross-site redirects, and a Strict cookie
   would not come along (every sign-in would ask for the password again).
   Every POST still needs a CSRF token plus same-origin Fetch metadata /
@@ -108,7 +107,7 @@ form that ends in a redirect to the RP would be blocked by `form-action
 of the request's (already validated) redirect URI or the SP's registered
 ACS URLs. Because there is no script, the SAML response page needs one
 click on "Continue" (no auto-submit). A nonce'd auto-submit script could
-be added later if the owner prefers one click less.
+be added later if one click less is preferred.
 
 ## D7. SAML hardening
 
@@ -156,8 +155,8 @@ be added later if the owner prefers one click less.
 
 ## D9. Lab
 
-Own lab, as the spec requires: a copy of `planning/lab` on the lab host with
-prefix `conductor-idplab`, bridge `cndidp0`, subnet **10.96.0.0/24** (the
+Own lab, as the spec requires: a copy of the lab tooling on the lab host with
+prefix `conductor-idplab`, bridge `cndidp0`, subnet 10.96.0.0/24 (the
 spec suggested 10.94, but P3's drill network already used 10.94 and P5's
 lab 10.95), state in `~/conductor-idplab/state`, two DCs (same domain
 name, isolated network). conductor-idp runs on dc1; the test relying

@@ -15,7 +15,7 @@
 # copied back to e2e/screenshots and e2e/playwright-report.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
-LAB_HOST="${LAB_HOST:-server-home}"
+LAB_HOST="${LAB_HOST:?set LAB_HOST to the SSH destination of the lab host}"
 projects=()
 for a in "$@"; do
   case "$a" in

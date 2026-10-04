@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Maintainer lab tooling: it needs the family checkout with the lab
+# scripts (planning/lab), which are not published; the lab is described in
+# https://github.com/openbasalt/samba-conductor-docs/blob/main/testing.md
 # conductor-idp's lab, on the lab host: a copy of planning/lab with its own
 # prefix (conductor-idplab), bridge (cndidp0), subnet (10.96.0.0/24) and
 # state directory (~/conductor-idplab/state), so the shared conductor-lab

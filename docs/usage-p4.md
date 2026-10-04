@@ -5,7 +5,7 @@ live only on the lab host in 0600 files under `~/conductor-idplab/state`.
 
 ## Lab
 
-A private copy of `planning/lab` (the shared `conductor-lab-*` VMs were not
+A private copy of the lab tooling (the shared `conductor-lab-*` VMs were not
 touched), re-parameterized:
 
 | Item | Value |
@@ -18,7 +18,7 @@ touched), re-parameterized:
 | idp | `https://dc1.lab.conductor.test:9443`, unit `conductor-idp` on dc1 |
 
 ```sh
-# on the lab host, once: copy planning/lab to ~/conductor-idplab/lab and patch common.sh
+# on the lab host, once: copy the lab tooling to ~/conductor-idplab/lab and patch common.sh
 # (PREFIX=conductor-idplab, BRIDGE=cndidp0, SUBNET=10.96.0, MACs 52:54:00:96:00:1x,
 #  LAB_HOME=~/conductor-idplab/state), then:
 ~/conductor-idplab/lab/up.sh                      # 2 DCs, seed, snapshot "seeded" (~7 min)

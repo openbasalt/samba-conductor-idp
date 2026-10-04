@@ -1,10 +1,10 @@
 # conductor-idp
 
 OpenID Connect provider and SAML 2.0 identity provider backed by Samba AD.
-Part of Samba Conductor v2; design in `../planning/docs/architecture.md`,
-spec in `../planning/docs/p4-spec.md`.
+Part of Samba Conductor v2; design in [docs/design.md](docs/design.md)
+and the family's [architecture.md](https://github.com/openbasalt/samba-conductor-docs/blob/main/architecture.md).
 
-Status: **P4 complete** (2026-10-03): OIDC and SAML validated end to end in
+Status: pre-release, no tagged version yet. OIDC and SAML validated end to end in
 an isolated two-DC lab with an independent OIDC client, Grafana and a
 crewjam SAML SP, desktop and mobile ([`docs/usage-p4.md`](docs/usage-p4.md)).
 
@@ -15,32 +15,32 @@ crewjam SAML SP, desktop and mobile ([`docs/usage-p4.md`](docs/usage-p4.md)).
 
 ## What it does
 
-- **OIDC** (zitadel/oidc v3, OpenID certified, on our own SQLite storage):
+- OIDC (zitadel/oidc v3, OpenID certified, on our own SQLite storage):
   Authorization Code + PKCE S256 only (also for confidential clients),
   discovery narrowed to what is served, JWKS with ES256 keys sealed at rest
   and rotated with an overlap, token, userinfo, revocation, end_session.
   Codes single use (reuse revokes what they issued); opaque access tokens;
   refresh tokens hashed, rotated, reuse revokes the chain; every refresh
   re-checks the account and its groups in AD.
-- **SAML 2.0** (crewjam/saml): SP- and IdP-initiated SSO, signed response
+- SAML 2.0 (crewjam/saml): SP- and IdP-initiated SSO, signed response
   and assertion, optional encryption, metadata, per-SP NameID, attribute
   mapping and allowed groups; SP data only from the admin registry,
   request IDs answered once, staged signing-key rotation.
-- **AD**: passwords verified with Kerberos (simple bind fallback when
+- AD: passwords verified with Kerberos (simple bind fallback when
   configured) and never kept; bind sub-codes handled (expired and
   must-change go to a change page that needs the old password; locked,
   disabled, expired get a clear message); claims and policy read with a
   read-only service account; `sub` = objectGUID; `groups` by name or SID,
   nested.
-- **Clients and SPs** registered by administrators: CLI
+- Clients and SPs registered by administrators: CLI
   (`conductor-idp client|saml …`) and admin pages; exact redirect URIs,
   allowed AD groups by SID, scopes, consent (first-party skip), optional
   mandatory 2FA per client.
-- **2FA**: TOTP + recovery codes, mandatory for administrators (enrolled
+- 2FA: TOTP + recovery codes, mandatory for administrators (enrolled
   through a one-time link), `off/optional/required` for others. Local
   backend now; a client for conductor's verification socket is ready for
   a single 2FA store (docs/decisions.md D4).
-- **Security**: no JavaScript at all (CSP `script-src 'none'`, form-action
+- Security: no JavaScript at all (CSP `script-src 'none'`, form-action
   limited to the flow's own targets), CSRF tokens + Fetch metadata,
   `__Host-` cookies, rate limits per address and per account, hash-chained
   audit log, systemd sandbox, i18n en + pt-BR, `data-e2e` everywhere.
@@ -50,7 +50,7 @@ crewjam SAML SP, desktop and mobile ([`docs/usage-p4.md`](docs/usage-p4.md)).
 - [Install and operate](docs/install.md) (config reference: [`idp.toml.example`](idp.toml.example))
 - [Install on Basalt OS / Fedora (RPM, SELinux)](docs/install-fedora.md)
 - [Decisions](docs/decisions.md)
-- [P4 lab run](docs/usage-p4.md) and [screenshots](docs/screenshots/)
+- [Lab run](docs/usage-p4.md) and [screenshots](docs/screenshots/)
 
 ## Development
 

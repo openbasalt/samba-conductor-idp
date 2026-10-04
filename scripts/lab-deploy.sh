@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Maintainer lab tooling: it needs the family checkout with the lab
+# scripts (planning/lab), which are not published; the lab is described in
+# https://github.com/openbasalt/samba-conductor-docs/blob/main/testing.md
 # Build conductor-idp (and the test tools) on the lab host and install it on
 # the idp lab's dc1 (scripts/lab/idp-lab.sh).
 #
@@ -6,7 +9,7 @@
 #   scripts/lab-deploy.sh --snapshot    # … from the seeded snapshot, then snapshot idp-p4
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/../.."   # the family directory
-LAB_HOST="${LAB_HOST:-server-home}"
+LAB_HOST="${LAB_HOST:?set LAB_HOST to the SSH destination of the lab host}"
 VERSION="$(git -C conductor-idp describe --always --dirty 2>/dev/null || echo dev)"
 rsync -a --delete --exclude .git/ --exclude /conductor-idp/bin/ --exclude node_modules/ --exclude /conductor-idp/e2e/test-results/ \
   --exclude /conductor-idp/e2e/playwright-report/ ad conductor-idp "$LAB_HOST:conductor-idplab/src/"

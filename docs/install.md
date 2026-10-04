@@ -6,7 +6,7 @@ conductor-idp needs LDAPS (636) and Kerberos (88) to a DC. It can run on a
 DC or on any other host. Install it from the Debian package (recommended;
 Ubuntu 24.04 is best effort) or from source. The from-source steps are what
 `scripts/lab/remote-install-idp.sh` does in the lab; the package steps are
-what the package lab (`../planning/lab/pkglab/`) runs.
+what the package lab (`lab/pkglab/`) runs.
 
 ## 0. The package
 
@@ -30,7 +30,7 @@ The package installs `/usr/bin/conductor-idp`, its unit
 conffile `/etc/conductor-idp/idp.toml` (the example values); it creates the
 `conductor-idp` user, `/etc/conductor-idp` (root:conductor-idp 0750) with
 `tls/` (0750) and `credentials/` (root 0700), and `/var/lib/conductor-idp`.
-**It does not enable or start anything.** Then: step 1, the certificates of
+It does not enable or start anything. Then: step 1, the certificates of
 step 2, steps 3 and 4 (edit the installed `idp.toml`), and `systemctl
 enable --now conductor-idp` (step 5). In the CLI alias of step 6 the binary
 is `/usr/bin/conductor-idp`.
