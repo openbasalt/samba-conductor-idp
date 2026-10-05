@@ -54,6 +54,24 @@ type Config struct {
 	State          State          `toml:"state"`
 	UI             UI             `toml:"ui"`
 	SAML           SAML           `toml:"saml"`
+	API            API            `toml:"api"`
+}
+
+// API is the local management API used by conductor's "Single sign-on"
+// section (idpapi). Off by default.
+type API struct {
+	Enabled bool `toml:"enabled"`
+	// Socket is the Unix socket path when systemd does not pass one
+	// (conductor-idp-api.socket does).
+	Socket string `toml:"socket"`
+	// SocketGroup owns the socket created by the service (the conductor
+	// group; the service user must be a member). Unused with socket
+	// activation.
+	SocketGroup string `toml:"socket_group"`
+	// AllowedUsers and AllowedUIDs may connect (SO_PEERCRED); default the
+	// conductor user.
+	AllowedUsers []string `toml:"allowed_users"`
+	AllowedUIDs  []int    `toml:"allowed_uids"`
 }
 
 // Server is the HTTP listener and the public identity of the provider.
@@ -215,6 +233,7 @@ func Default() *Config {
 		State:     State{Database: "/var/lib/conductor-idp/idp.db"},
 		UI:        UI{DefaultLanguage: "en", ProductName: "Samba Conductor"},
 		SAML:      SAML{AssertionMinutes: 5},
+		API:       API{Socket: "/run/conductor-idp/api.sock"},
 	}
 }
 
@@ -329,6 +348,21 @@ func (c *Config) Validate() error {
 	if c.SAML.AssertionMinutes < 1 || c.SAML.AssertionMinutes > 30 {
 		bad("saml.assertion_minutes must be 1-30")
 	}
+	if c.API.Enabled {
+		if !filepath.IsAbs(c.API.Socket) {
+			bad("api.socket must be an absolute path")
+		}
+		for _, u := range c.API.AllowedUIDs {
+			if u <= 0 {
+				bad("api.allowed_uids: root and negative UIDs are not allowed")
+			}
+		}
+		for _, u := range c.API.AllowedUsers {
+			if u == "" || u == "root" || strings.ContainsAny(u, " :/") {
+				bad("api.allowed_users: %q is not allowed", u)
+			}
+		}
+	}
 	return errors.Join(errs...)
 }
 
@@ -338,6 +372,15 @@ func isLoopback(host string) bool {
 	}
 	a, err := netip.ParseAddr(host)
 	return err == nil && a.IsLoopback()
+}
+
+// APIAllowedUsers returns the users the management API admits by name
+// (the conductor user when nothing is configured).
+func (c *Config) APIAllowedUsers() []string {
+	if len(c.API.AllowedUsers) == 0 && len(c.API.AllowedUIDs) == 0 {
+		return []string{"conductor"}
+	}
+	return c.API.AllowedUsers
 }
 
 // Issuer returns the issuer without a trailing slash.

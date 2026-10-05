@@ -5,6 +5,7 @@ package registry
 
 import (
 	"context"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"net/url"
@@ -267,6 +268,11 @@ type SPInput struct {
 	IdPInitiated     bool
 	DefaultRelay     string
 	RequireMFA       bool
+	// SLOURL and SLOBinding: the SP's single logout endpoint (optional).
+	SLOURL     string
+	SLOBinding string
+	// SigningCert (DER) verifies the SP's signed LogoutRequests.
+	SigningCert []byte
 }
 
 // BuildSP validates input into a registration.
@@ -303,6 +309,23 @@ func BuildSP(ctx context.Context, dir directory.Backend, in SPInput) (*store.SAM
 	if in.EncryptAssertion && len(in.EncryptionCert) == 0 {
 		bad("encryption needs the SP's certificate (import its metadata)")
 	}
+	if in.SLOURL != "" {
+		if !samlidp.ValidACS(in.SLOURL) {
+			bad("single logout URL %q must be https (or http on a loopback host)", in.SLOURL)
+		}
+		if !slices.Contains(samlidp.SLOBindings, in.SLOBinding) {
+			bad("single logout binding must be HTTP-Redirect or HTTP-POST")
+		}
+	} else if in.SLOBinding != "" {
+		bad("a single logout binding needs a single logout URL")
+	}
+	for name, der := range map[string][]byte{"encryption": in.EncryptionCert, "signing": in.SigningCert} {
+		if len(der) > 0 {
+			if _, err := x509.ParseCertificate(der); err != nil {
+				bad("the SP's %s certificate is not a valid X.509 certificate", name)
+			}
+		}
+	}
 	if len(in.DefaultRelay) > 512 {
 		bad("default RelayState is too long")
 	}
@@ -319,7 +342,8 @@ func BuildSP(ctx context.Context, dir directory.Backend, in SPInput) (*store.SAM
 	return &store.SAMLSP{EntityID: in.EntityID, Name: name, ACSURLs: acs, NameIDFormat: in.NameIDFormat,
 		NameIDSource: in.NameIDSource, Attributes: in.Attributes, AllowedGroups: groups, AllowAllUsers: in.AllowAllUsers,
 		EncryptAssertion: in.EncryptAssertion, EncryptionCert: in.EncryptionCert, IdPInitiated: in.IdPInitiated,
-		DefaultRelay: in.DefaultRelay, RequireMFA: in.RequireMFA, Enabled: true}, nil
+		DefaultRelay: in.DefaultRelay, RequireMFA: in.RequireMFA, Enabled: true, SLOURL: in.SLOURL, SLOBinding: in.SLOBinding,
+		SigningCert: in.SigningCert}, nil
 }
 
 // ParseAttributes reads "Name=source" pairs (one per element).

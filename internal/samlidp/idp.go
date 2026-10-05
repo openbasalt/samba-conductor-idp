@@ -195,6 +195,10 @@ func (i *IdP) Metadata(ctx context.Context) ([]byte, error) {
 					KeyDescriptors:             kds,
 				},
 				NameIDFormats: formats,
+				SingleLogoutServices: []saml.Endpoint{
+					{Binding: saml.HTTPRedirectBinding, Location: i.SLOURL()},
+					{Binding: saml.HTTPPostBinding, Location: i.SLOURL()},
+				},
 			},
 			WantAuthnRequestsSigned: &wantSigned,
 			SingleSignOnServices: []saml.Endpoint{
@@ -277,6 +281,8 @@ type Form struct {
 	URL          string
 	SAMLResponse string
 	RelayState   string
+	// Participant is what a later single logout must name.
+	Participant Participant
 }
 
 // Allowed reports whether a user may sign in to a service provider.
@@ -342,7 +348,15 @@ func (i *IdP) finish(ctx context.Context, req *saml.IdpAuthnRequest, sp *store.S
 	if err != nil {
 		return nil, err
 	}
-	return &Form{URL: req.ACSEndpoint.Location, SAMLResponse: base64.StdEncoding.EncodeToString(buf), RelayState: req.RelayState}, nil
+	p := Participant{EntityID: sp.EntityID}
+	if a := req.Assertion; a != nil && a.Subject != nil && a.Subject.NameID != nil {
+		p.NameID, p.NameIDFormat, p.SPNameQualifier = a.Subject.NameID.Value, a.Subject.NameID.Format, a.Subject.NameID.SPNameQualifier
+		if len(a.AuthnStatements) > 0 {
+			p.SessionIndex = a.AuthnStatements[0].SessionIndex
+		}
+	}
+	return &Form{URL: req.ACSEndpoint.Location, SAMLResponse: base64.StdEncoding.EncodeToString(buf), RelayState: req.RelayState,
+		Participant: p}, nil
 }
 
 func randomID() string {
@@ -351,8 +365,9 @@ func randomID() string {
 	return "id-" + hex.EncodeToString(b)
 }
 
-// values returns the values of a source for a user.
-func (i *IdP) values(ctx context.Context, source string, u *directory.User) ([]string, error) {
+// Values returns the values of a source for a user (also used by the
+// management API's mapping preview).
+func (i *IdP) Values(ctx context.Context, source string, u *directory.User) ([]string, error) {
 	one := func(v string) []string {
 		if v == "" {
 			return nil
@@ -401,7 +416,7 @@ func (i *IdP) values(ctx context.Context, source string, u *directory.User) ([]s
 var ErrNoNameID = errors.New("samlidp: the user has no value for the NameID")
 
 func (i *IdP) makeAssertion(ctx context.Context, req *saml.IdpAuthnRequest, sp *store.SAMLSP, u *directory.User, sess Session) error {
-	nameIDs, err := i.values(ctx, sp.NameIDSource, u)
+	nameIDs, err := i.Values(ctx, sp.NameIDSource, u)
 	if err != nil {
 		return err
 	}
@@ -410,7 +425,7 @@ func (i *IdP) makeAssertion(ctx context.Context, req *saml.IdpAuthnRequest, sp *
 	}
 	var attrs []saml.Attribute
 	for _, a := range sp.Attributes {
-		vals, err := i.values(ctx, a.Source, u)
+		vals, err := i.Values(ctx, a.Source, u)
 		if err != nil {
 			return err
 		}
@@ -517,10 +532,27 @@ func ParseSPMetadata(data []byte) (*store.SAMLSP, error) {
 			}
 		}
 		for _, kd := range d.KeyDescriptors {
-			if (kd.Use == "encryption" || kd.Use == "") && len(kd.KeyInfo.X509Data.X509Certificates) > 0 && sp.EncryptionCert == nil {
-				raw := strings.Join(strings.Fields(kd.KeyInfo.X509Data.X509Certificates[0].Data), "")
-				if der, err := base64.StdEncoding.DecodeString(raw); err == nil {
-					sp.EncryptionCert = der
+			if len(kd.KeyInfo.X509Data.X509Certificates) == 0 {
+				continue
+			}
+			raw := strings.Join(strings.Fields(kd.KeyInfo.X509Data.X509Certificates[0].Data), "")
+			der, err := base64.StdEncoding.DecodeString(raw)
+			if err != nil {
+				continue
+			}
+			if (kd.Use == "encryption" || kd.Use == "") && sp.EncryptionCert == nil {
+				sp.EncryptionCert = der
+			}
+			if (kd.Use == "signing" || kd.Use == "") && sp.SigningCert == nil {
+				sp.SigningCert = der
+			}
+		}
+		// Single logout: HTTP-Redirect preferred (no extra click), else
+		// HTTP-POST.
+		for _, want := range SLOBindings {
+			for _, e := range d.SingleLogoutServices {
+				if sp.SLOURL == "" && e.Binding == want && ValidACS(e.Location) {
+					sp.SLOURL, sp.SLOBinding = e.Location, e.Binding
 				}
 			}
 		}

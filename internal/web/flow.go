@@ -249,7 +249,7 @@ func (s *Server) consentData(rc *reqCtx, ar *store.AuthRequest, cl *store.Client
 	if u != nil {
 		host = u.Host
 	}
-	return map[string]any{"App": cl.Name, "Host": host, "Scopes": scopes, "C": "o." + ar.ID}
+	return map[string]any{"App": cl.Name, "Host": host, "Scopes": scopes, "C": "o." + ar.ID, "Note": s.consentNote(rc.lang)}
 }
 
 func (s *Server) handleConsentPage(rc *reqCtx) {
@@ -326,8 +326,7 @@ func (s *Server) handleRPLogoutPage(rc *reqCtx) {
 	}
 	if t.hinted {
 		s.endSessions.take(tok)
-		s.endBrowserSession(rc, "rp-initiated logout (id_token_hint) client="+t.client)
-		s.leaveTo(rc, t.target)
+		s.signOut(rc, "rp-initiated logout (id_token_hint) client="+t.client, t.target)
 		return
 	}
 	if rc.sess == nil {
@@ -349,8 +348,7 @@ func (s *Server) handleRPLogout(rc *reqCtx) {
 		return
 	}
 	if rc.form("decision") == "signout" {
-		s.endBrowserSession(rc, "rp-initiated logout (confirmed) client="+t.client)
-		s.leaveTo(rc, t.target)
+		s.signOut(rc, "rp-initiated logout (confirmed) client="+t.client, t.target)
 		return
 	}
 	rc.redirect("/")
@@ -483,6 +481,7 @@ func (s *Server) finishSAML(rc *reqCtx, c cont) {
 		rc.errorPage(http.StatusBadRequest, "err.flow")
 		return
 	}
+	rc.sess.remember(form.Participant)
 	s.audit(ctx, rc, "saml.sso", sp.EntityID, "sp-initiated", store.ResultOK)
 	s.renderSAMLPost(rc, sp.Name, form)
 }
@@ -523,6 +522,7 @@ func (s *Server) handleSAMLStart(rc *reqCtx) {
 		rc.errorPage(http.StatusBadRequest, "err.saml_request")
 		return
 	}
+	rc.sess.remember(form.Participant)
 	s.audit(ctx, rc, "saml.sso", sp.EntityID, "idp-initiated", store.ResultOK)
 	s.renderSAMLPost(rc, sp.Name, form)
 }
@@ -561,7 +561,8 @@ func (s *Server) handleHome(rc *reqCtx) {
 			}
 		}
 	}
-	enrolled, _ := s.mfa.Enrolled(ctx, u)
+	st, _ := s.mfa.State(ctx, u)
+	enrolled := st.Enrolled
 	admin, _ := s.isAdmin(ctx, rc.sess)
 	rc.sess.mu.Lock()
 	verified := rc.sess.mfaVerified

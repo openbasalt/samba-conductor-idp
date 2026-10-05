@@ -34,6 +34,10 @@ type pageData struct {
 	Product string
 	Query   url.Values
 	D       map[string]any
+	// Nonce and ScriptSRI load the WebAuthn script (second-factor page
+	// with a security key only); empty everywhere else.
+	Nonce     string
+	ScriptSRI string
 }
 
 type userInfo struct {
@@ -131,6 +135,9 @@ func (rc *reqCtx) render(status int, page string, d map[string]any) {
 	}
 	pd := pageData{Lang: rc.lang, Theme: rc.theme, Path: rc.r.URL.Path, Version: rc.s.version, Product: rc.s.cfg.UI.ProductName,
 		Query: rc.r.URL.Query(), D: d}
+	if rc.nonce != "" && d["KeyOptions"] != nil {
+		pd.Nonce, pd.ScriptSRI = rc.nonce, rc.s.scriptSRI
+	}
 	if rc.sess != nil {
 		rc.sess.mu.Lock()
 		pd.CSRF = rc.sess.csrf
@@ -151,8 +158,8 @@ func (rc *reqCtx) render(status int, page string, d map[string]any) {
 		http.Error(rc.w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	if len(rc.formTargets) > 0 {
-		rc.w.Header().Set("Content-Security-Policy", csp(rc.formTargets))
+	if len(rc.formTargets) > 0 || pd.Nonce != "" {
+		rc.w.Header().Set("Content-Security-Policy", csp(rc.formTargets, pd.Nonce))
 	}
 	rc.w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	rc.w.WriteHeader(status)

@@ -107,14 +107,26 @@ served.
   the current one and the current key keeps signing until the overlap
   ends, because SPs pin certificates. An immediate rotation exists for
   emergencies.
-- Single logout is not implemented.
+- Single logout (`<issuer>/saml/slo`): a LogoutRequest signed with the
+  HTTP-Redirect query signature by the SP's registered signing
+  certificate ends the session; any other request asks the user first.
+  The other SPs of the session then receive a signed LogoutRequest in
+  turn, and the initiator a LogoutResponse. A logout started at the IdP
+  or by an OpenID Connect client runs the same chain.
 
 ## Client and SP registration
 
-- Administrators register OIDC clients and SAML SPs through the CLI
-  (`conductor-idp client` and `conductor-idp saml` commands) or the admin
-  pages of conductor-idp. Administrators are members of the configured
-  admin groups, matched by SID and re-checked against AD.
+- Administrators register OIDC clients and SAML SPs from conductor's
+  "Single sign-on" section (through the local management API, below),
+  through the CLI (`conductor-idp client` and `conductor-idp saml`
+  commands) or on the admin pages of conductor-idp itself. Administrators
+  are members of the configured admin groups, matched by SID and
+  re-checked against AD.
+- conductor's section adds guided presets (Google Workspace, Grafana,
+  Nextcloud, GitLab, generic OpenID Connect and SAML), metadata import by
+  URL, file or text, a preview of the claims or of the assertion for a
+  real user, signing keys with certificate download, settings and
+  activity per application.
 - A client has a kind (confidential or public), redirect and post-logout
   URIs, scopes, the groups claim format and filter, first-party flag and
   an optional mandatory second factor. An SP has its entity ID, ACS URLs,
@@ -135,20 +147,32 @@ served.
 
 ## Second factor
 
-- The policy is conductor's: administrators always need a second factor
-  (an administrator without one enrolls through a one-time link from
+- The policy: administrators always need a second factor (an
+  administrator without one enrolls through a one-time link from
   `conductor-idp enroll-link` or the admin pages); everyone else follows
   `off`, `optional` or `required`; a client or SP can require it, which
   steps up an already signed-in user.
 - Backend `local` (default): TOTP secrets in conductor-idp's database,
   sealed with AES-256-GCM under the master key (additional data: the
   objectGUID), and hashed single-use recovery codes.
-- Backend `conductor`: a client for a local Unix-socket API (`status` and
-  `verify` by user SID, peer checked by conductor) exists so that one
-  second-factor store can serve both components; the server side of that
-  socket is not implemented in conductor.
-- A failing second-factor backend fails closed. WebAuthn is not offered
-  by conductor-idp.
+- Backend `conductor`: conductor's second factor, through conductor's
+  local socket (peer checked by conductor): one enrollment for both
+  (authenticator app, recovery codes, security keys and passkeys) and
+  conductor's role-based policy. Security keys registered in conductor
+  work at the IdP when the IdP's origin is one of conductor's WebAuthn
+  origins (a shared parent domain as RP ID, or WebAuthn related origins).
+- A failing second-factor backend fails closed.
+
+## Management API
+
+- A local Unix socket (systemd socket activation) that only the conductor
+  user may use (SO_PEERCRED): typed, allowlisted operations for clients,
+  SPs, metadata import, previews, signing keys, settings, activity and the
+  audit log. Every mutation is audited with the AD user conductor acted
+  for. A client secret is returned once and stored only as a hash.
+- Settings edited there (session lifetimes, the local second-factor
+  policy, a consent screen note per language) are stored in the database
+  and override the configuration file, whose values remain the defaults.
 
 ## Sessions and web hardening
 
@@ -159,10 +183,11 @@ served.
   browser through cross-site redirects; every POST still needs a CSRF
   token plus same-origin Fetch metadata or `Origin`. The pre-session CSRF
   cookie is Strict.
-- No JavaScript on any page (`script-src 'none'`). CSP `form-action` is
-  `'self'` plus the origin of the request's validated redirect URI or the
-  SP's registered ACS URLs, because browsers apply it to the redirects
-  after a form. The SAML response page therefore needs one click.
+- No JavaScript on any page (`script-src 'none'`), except the WebAuthn
+  script on the second-factor page (nonce and Subresource Integrity). CSP
+  `form-action` is `'self'` plus the origin of the request's validated
+  redirect URI or the SP's registered ACS URLs, because browsers apply it
+  to the redirects after a form. The SAML response page therefore needs one click.
 - Rate limits per address and per account (kept below the domain lockout
   threshold) on sign-in, and per address on the token endpoint.
 - AD bind sub-codes are handled as in conductor: expired and must-change

@@ -148,6 +148,63 @@ Without an enrollment they can enroll only through a one-time link
 (`enroll-link`, valid 24 h). After that, the admin pages are at
 `<issuer>/admin`.
 
+## 8. Managing it from conductor (optional)
+
+conductor's "Single sign-on" section manages clients, SAML service
+providers, signing keys, settings and activity through conductor-idp's
+local management API, when both run on the same host:
+
+```sh
+# idp.toml
+[api]
+enabled = true
+```
+
+```sh
+sudo systemctl enable --now conductor-idp-api.socket   # /run/conductor-idp/api.sock, conductor-idp:conductor 0660
+sudo systemctl restart conductor-idp
+```
+
+The socket admits only the `conductor` user (`SO_PEERCRED`; the unit runs
+with `PrivateUsers=no` for that reason). Then set `[idp] enabled = true` in
+`conductor.toml` and restart conductor. Changes made there are confirmed
+in conductor with the administrator's password and second factor and
+audited by both; conductor-idp's audit log names the actor as
+`conductor:<user>@<address>`. Session lifetimes, the local second-factor
+policy and the consent screen note edited there are stored in the
+database and override `idp.toml` (the file's values become the defaults
+shown next to them).
+
+## 9. One second factor with conductor (optional)
+
+On conductor's host, conductor-idp can use conductor's second factor
+instead of its own: one enrollment for both (authenticator app, recovery
+codes and security keys), and conductor's policy (administrators,
+delegated roles, `[mfa] policy`, `webauthn.admin_required`).
+
+```sh
+# idp.toml
+[mfa]
+backend = "conductor"
+conductor_socket = "/run/conductor/mfa.sock"
+```
+
+On the conductor side (conductor's install doc has the details):
+`[idp] mfa_socket = true` in `conductor.toml`, `systemctl enable
+conductor-mfa.socket` (owned by conductor, group `conductor-idp`, 0660),
+and a drop-in with `PrivateUsers=no` for conductor.service. With this
+backend users enroll in conductor only; the idp's own enrollment pages and
+`enroll-link` are not used.
+
+Security keys and passkeys registered in conductor work at the IdP when
+the IdP's origin is one of conductor's WebAuthn origins: give both a
+common parent domain as `webauthn.rp_id` (`rp_id = "example.com"`,
+`origins = ["https://conductor.example.com:8443",
+"https://idp.example.com:9443"]`), or list the IdP's origin in
+`webauthn.related_origins` when conductor answers on the RP ID's host
+itself. Keys registered before such a change are bound to the old RP ID
+and must be registered again.
+
 ## Relying parties
 
 - OIDC discovery: `<issuer>/.well-known/openid-configuration`. Clients must
@@ -157,9 +214,22 @@ Without an enrollment they can enroll only through a one-time link
   `login_attribute_path = preferred_username`, `role_attribute_path =
   contains(groups[*], 'Domain Admins') && 'Admin' || 'Viewer'`, auth/token/
   api URLs `<issuer>/authorize`, `/oauth/token`, `/userinfo`.
-- SAML: metadata `<issuer>/saml/metadata`, SSO URL `<issuer>/saml/sso`.
-  Google Workspace: register the SP with entity ID `google.com` (or
-  `google.com/a/<domain>`), ACS `https://www.google.com/a/<domain>/acs`,
-  NameID format emailAddress, NameID source `email`; upload the IdP
-  certificate from the metadata and set the sign-in URL to the SSO URL.
-  Not tested against Google itself in P4.
+- SAML: metadata `<issuer>/saml/metadata`, SSO URL `<issuer>/saml/sso`,
+  single logout URL `<issuer>/saml/slo` (HTTP-Redirect and HTTP-POST).
+  An SP takes part in single logout when its registration has a single
+  logout URL; its LogoutRequests end the session without a confirmation
+  only when signed with the HTTP-Redirect query signature by its
+  registered signing certificate.
+- Google Workspace (or Cloud Identity): register the SP with entity ID
+  `google.com/a/<domain>` and ACS `https://www.google.com/a/<domain>/acs`
+  for a legacy SSO profile, or the entity ID and ACS URL Google's Admin
+  console shows for a SAML SSO profile created there
+  (`https://accounts.google.com/samlrp/...`); NameID format emailAddress,
+  NameID source `email`. In the Admin console (Security, Authentication,
+  SSO with third party IdP): sign-in page URL = the SSO URL, IdP entity ID
+  = the metadata URL, sign-out page URL = `<issuer>/logged-out`, and the
+  verification certificate from the metadata (conductor's Single sign-on
+  section shows these values and downloads the certificate). Google takes
+  one certificate at a time: during a staged SAML key rotation, upload the
+  new certificate before the switch. Google does not use SAML single
+  logout.

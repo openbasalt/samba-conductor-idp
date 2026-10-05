@@ -295,7 +295,7 @@ func (s *Server) handleLogin(rc *reqCtx) {
 		s.loginError(rc, c, http.StatusBadGateway, "err.directory", typed, enroll)
 		return
 	}
-	enrolled, err := s.mfa.Enrolled(ctx, u)
+	st, err := s.mfa.State(ctx, u)
 	if err != nil {
 		// Fail closed: never skip a second factor because its store is down.
 		s.log.Error("reading 2FA state", "backend", s.mfa.Name(), "err", err)
@@ -303,15 +303,22 @@ func (s *Server) handleLogin(rc *reqCtx) {
 		s.loginError(rc, c, http.StatusServiceUnavailable, "err.mfa_unavailable", typed, enroll)
 		return
 	}
+	enrolled := st.Enrolled
+	// The policy for users without a role: the idp's own (local backend)
+	// or conductor's (shared backend, which also covers conductor's roles).
+	policy, required := s.mfaPolicy(), s.mfaPolicy() == config.MFARequired
+	if st.Shared {
+		policy, required = st.Policy, st.Required
+	}
 	// A new sign-in replaces whatever session this browser had.
 	if rc.sess != nil {
 		s.sess.destroy(rc.sess)
 	}
 	sess := &Session{sam: strings.ToLower(u.SAM), guid: u.GUID, userSID: u.SID.String(), name: u.Name(), ip: rc.ip,
 		userAgent: rc.r.UserAgent(), authTime: s.now().UTC(), admin: admin, adminAt: s.now()}
-	need := admin || s.cfg.MFA.Policy == config.MFARequired || s.flowRequiresMFA(ctx, c)
+	need := admin || required || s.flowRequiresMFA(ctx, c)
 	switch {
-	case enrolled && (need || s.cfg.MFA.Policy != config.MFAOff):
+	case enrolled && (need || policy != config.MFAOff):
 		sess.stage = stageMFA
 	case need && s.local == nil:
 		s.audit(ctx, rc, "signin.failure", sam, "2FA required but not enrolled (enroll in conductor)", store.ResultDenied)
@@ -498,11 +505,121 @@ func (s *Server) handleMFAPage(rc *reqCtx) {
 	rc.render(http.StatusOK, "login_2fa", s.mfaData(rc, ""))
 }
 
+// mfaData builds the second-factor page. With the conductor backend and a
+// user who has security keys, it starts a WebAuthn assertion through
+// conductor (the ceremony ID stays in the session, single use) and the
+// page loads the WebAuthn script.
 func (s *Server) mfaData(rc *reqCtx, errMsg string) map[string]any {
 	c := rc.cont()
 	d := map[string]any{"C": c.String(), "Error": errMsg, "StepUp": rc.sess.snapshotStage() == stageFull}
 	s.flowInfo(rc, c, d)
+	if s.keyBackend == nil {
+		return d
+	}
+	ctx := rc.ctx()
+	u, err := s.sessionUser(ctx, rc.sess)
+	if err != nil {
+		return d
+	}
+	st, err := s.mfa.State(ctx, u)
+	if err != nil {
+		return d
+	}
+	d["KeyRequired"] = st.KeyRequired
+	if st.Keys == 0 {
+		return d
+	}
+	if rc.nonce == "" {
+		// A page rendered after a POST (wrong code) offers the key again.
+		rc.nonce = newToken()[:24]
+	}
+	cer, err := s.keyBackend.BeginKey(ctx, u)
+	if err != nil {
+		s.log.Warn("starting a security key ceremony failed", "err", err)
+		return d
+	}
+	rc.sess.mu.Lock()
+	rc.sess.keyCeremony = cer.ID
+	rc.sess.mu.Unlock()
+	d["KeyOptions"] = string(cer.Options)
 	return d
+}
+
+// handleMFAKey finishes a security key assertion (conductor backend).
+func (s *Server) handleMFAKey(rc *reqCtx) {
+	ctx, cancel := context.WithTimeout(rc.ctx(), requestTimeout)
+	defer cancel()
+	c := rc.cont()
+	sess := rc.sess
+	sess.mu.Lock()
+	sam, ceremony := sess.sam, sess.keyCeremony
+	sess.keyCeremony = ""
+	sess.mu.Unlock()
+	rc.actorHint = sam
+	fail := func(status int, key string) {
+		rc.render(status, "login_2fa", s.mfaData(rc, rc.T(key)))
+	}
+	if s.keyBackend == nil || ceremony == "" {
+		fail(http.StatusBadRequest, "mfa.err.key")
+		return
+	}
+	if !s.ipLimit.Allow("mfa:" + rc.ip) {
+		fail(http.StatusTooManyRequests, "signin.err.rate_ip")
+		return
+	}
+	u, err := s.sessionUser(ctx, sess)
+	if err != nil || !u.Active() {
+		s.sess.destroy(sess)
+		clearCookie(rc.w, sessionCookie)
+		rc.redirect(c.with("/login"))
+		return
+	}
+	ok, err := s.keyBackend.FinishKey(ctx, u, ceremony, rc.rawForm("response"))
+	if err != nil && errors.Is(err, mfa.ErrUnavailable) {
+		s.log.Error("security key verification failed", "err", err)
+		fail(http.StatusServiceUnavailable, "err.mfa_unavailable")
+		return
+	}
+	if err != nil || !ok {
+		s.mfaRefused(rc, c, sam, "security key")
+		return
+	}
+	s.mfaPassed(rc, c, sam, "security key backend="+s.mfa.Name())
+}
+
+// mfaRefused counts a wrong second factor and ends the sign-in after
+// maxMFAFailures.
+func (s *Server) mfaRefused(rc *reqCtx, c cont, sam, what string) {
+	sess := rc.sess
+	sess.mu.Lock()
+	sess.mfaFailures++
+	n := sess.mfaFailures
+	sess.mu.Unlock()
+	s.audit(rc.ctx(), rc, "mfa.failure", sam, what, store.ResultDenied)
+	if n >= maxMFAFailures {
+		s.sess.destroy(sess)
+		clearCookie(rc.w, sessionCookie)
+		rc.redirect(c.with("/login"))
+		return
+	}
+	key := "mfa.err.invalid"
+	if what == "security key" {
+		key = "mfa.err.key"
+	}
+	rc.render(http.StatusUnauthorized, "login_2fa", s.mfaData(rc, rc.T(key)))
+}
+
+// mfaPassed completes the second factor: new session ID, full stage.
+func (s *Server) mfaPassed(rc *reqCtx, c cont, sam, detail string) {
+	sess := rc.sess
+	sess.mu.Lock()
+	sess.mfaVerified = true
+	sess.mfaFailures = 0
+	sess.mu.Unlock()
+	tok := s.sess.rotate(sess, stageFull)
+	setCookie(rc.w, sessionCookie, tok, 0, http.SameSiteLaxMode)
+	s.audit(rc.ctx(), rc, "mfa.verify", sam, detail, store.ResultOK)
+	s.finish(rc, c)
 }
 
 // sessionUser re-reads the session's user.
@@ -534,6 +651,11 @@ func (s *Server) handleMFA(rc *reqCtx) {
 		return
 	}
 	res, err := s.mfa.Verify(ctx, u, rc.form("code"))
+	if errors.Is(err, mfa.ErrKeyRequired) {
+		s.audit(ctx, rc, "mfa.failure", sam, "TOTP refused: security key required", store.ResultDenied)
+		rc.render(http.StatusUnauthorized, "login_2fa", s.mfaData(rc, rc.T("mfa.err.key_required")))
+		return
+	}
 	if err != nil {
 		s.log.Error("2FA verification failed", "backend", s.mfa.Name(), "err", err)
 		key := "err.mfa_unavailable"
@@ -544,33 +666,15 @@ func (s *Server) handleMFA(rc *reqCtx) {
 		return
 	}
 	if !res.OK {
-		sess.mu.Lock()
-		sess.mfaFailures++
-		n := sess.mfaFailures
-		sess.mu.Unlock()
-		s.audit(ctx, rc, "mfa.failure", sam, "", store.ResultDenied)
-		if n >= maxMFAFailures {
-			s.sess.destroy(sess)
-			clearCookie(rc.w, sessionCookie)
-			rc.redirect(c.with("/login"))
-			return
-		}
-		rc.render(http.StatusUnauthorized, "login_2fa", s.mfaData(rc, rc.T("mfa.err.invalid")))
+		s.mfaRefused(rc, c, sam, "")
 		return
 	}
-	sess.mu.Lock()
-	sess.mfaVerified = true
-	sess.mfaFailures = 0
-	sess.mu.Unlock()
-	tok := s.sess.rotate(sess, stageFull)
-	setCookie(rc.w, sessionCookie, tok, 0, http.SameSiteLaxMode)
 	detail := "totp"
 	if res.Recovery {
 		detail = "recovery code"
 		rc.flashOK("mfa.recovery_used")
 	}
-	s.audit(ctx, rc, "mfa.verify", sam, detail+" backend="+s.mfa.Name(), store.ResultOK)
-	s.finish(rc, c)
+	s.mfaPassed(rc, c, sam, detail+" backend="+s.mfa.Name())
 }
 
 // ---- enrollment (local backend) ----
@@ -618,7 +722,7 @@ func (s *Server) enrollAllowed(rc *reqCtx) (*directory.User, bool) {
 	}
 	if rc.sess.snapshotStage() == stageFull {
 		// Voluntary enrollment: only for users without 2FA yet.
-		if enrolled, err := s.mfa.Enrolled(rc.ctx(), u); err != nil || enrolled {
+		if st, err := s.mfa.State(rc.ctx(), u); err != nil || st.Enrolled {
 			rc.redirect("/")
 			return nil, false
 		}
@@ -735,12 +839,7 @@ func (s *Server) handleContinue(rc *reqCtx) { s.finish(rc, rc.cont()) }
 // ---- sign out ----
 
 func (s *Server) handleLogout(rc *reqCtx) {
-	if rc.sess != nil {
-		s.audit(rc.ctx(), rc, "signout", "", "", store.ResultOK)
-		s.sess.destroy(rc.sess)
-	}
-	clearCookie(rc.w, sessionCookie)
-	rc.redirect("/login?m=signed_out")
+	s.signOut(rc, "", "/login?m=signed_out")
 }
 
 func (s *Server) handleLoggedOut(rc *reqCtx) {
@@ -750,11 +849,11 @@ func (s *Server) handleLoggedOut(rc *reqCtx) {
 // requiresEnrollment reports whether the session's user lacks 2FA but
 // the flow needs it (step-up for an application that requires it).
 func (s *Server) stepUp(rc *reqCtx, c cont, u *directory.User) {
-	enrolled, err := s.mfa.Enrolled(rc.ctx(), u)
+	st, err := s.mfa.State(rc.ctx(), u)
 	switch {
 	case err != nil:
 		rc.errorPage(http.StatusServiceUnavailable, "err.mfa_unavailable")
-	case enrolled:
+	case st.Enrolled:
 		rc.redirect(c.with("/login/2fa"))
 	case s.local != nil:
 		rc.redirect(c.with("/login/enroll"))

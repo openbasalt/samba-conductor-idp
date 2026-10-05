@@ -18,3 +18,23 @@ interface(`conductor_idp_domtrans',`
 	corecmd_search_bin($1)
 	domtrans_pattern($1, conductor_idp_exec_t, conductor_idp_t)
 ')
+
+########################################
+## <summary>
+##	Use the conductor-idp management API socket
+##	(/run/conductor-idp/api.sock).
+## </summary>
+## <param name="domain">
+##	<summary>
+##	Domain allowed access.
+##	</summary>
+## </param>
+#
+interface(`conductor_idp_api_stream_connect',`
+	gen_require(`
+		type conductor_idp_t, conductor_idp_var_run_t;
+	')
+
+	files_search_pids($1)
+	stream_connect_pattern($1, conductor_idp_var_run_t, conductor_idp_var_run_t, conductor_idp_t)
+')

@@ -2,16 +2,26 @@
 {{define "content"}}<div class="card narrow">
   <h1>{{t "mfa.title"}}</h1>
   {{template "app-note" .}}
-  <p>{{if .D.StepUp}}{{t "mfa.step_up"}}{{else}}{{t "mfa.intro"}}{{end}}</p>
   {{template "error-alert" .D.Error}}
+  {{if .D.KeyOptions}}<p>{{if .D.StepUp}}{{t "mfa.step_up_key"}}{{else}}{{t "mfa.intro_key"}}{{end}}</p>
+  <form method="post" action="/login/2fa/key" data-webauthn="get" data-options="{{.D.KeyOptions}}" autocomplete="off" data-e2e="key-form-assert">
+    {{template "csrf" .}}{{template "cont" .}}
+    <input type="hidden" name="response" value="">
+    <button class="btn btn-primary btn-block" type="button" data-webauthn-start disabled data-e2e="key-btn-use">{{t "keys.use"}}</button>
+    <p class="alert-error" role="alert" data-webauthn-error hidden data-e2e="key-text-error">{{t "keys.err.browser"}}</p>
+    <p class="hint" data-webauthn-unsupported hidden>{{t "keys.unsupported"}}</p>
+    <noscript><p class="hint">{{t "keys.noscript"}}</p></noscript>
+  </form>
+  <h2>{{if .D.KeyRequired}}{{t "mfa.or_recovery"}}{{else}}{{t "mfa.or_code"}}{{end}}</h2>
+  {{else}}<p>{{if .D.KeyRequired}}{{t "mfa.key_required_intro"}}{{else if .D.StepUp}}{{t "mfa.step_up"}}{{else}}{{t "mfa.intro"}}{{end}}</p>{{end}}
   <form method="post" action="/login/2fa" autocomplete="off">
     {{template "csrf" .}}{{template "cont" .}}
     <div class="field">
-      <label for="code">{{t "mfa.code"}}</label>
+      <label for="code">{{if .D.KeyRequired}}{{t "mfa.recovery_code"}}{{else}}{{t "mfa.code"}}{{end}}</label>
       <input id="code" name="code" type="text" inputmode="text" autocomplete="one-time-code" autocapitalize="none" spellcheck="false" required maxlength="16" data-e2e="mfa-input-code">
-      <span class="hint">{{t "mfa.code_hint"}}</span>
+      <span class="hint">{{if .D.KeyRequired}}{{t "mfa.recovery_hint"}}{{else}}{{t "mfa.code_hint"}}{{end}}</span>
     </div>
-    <button class="btn btn-primary btn-block" type="submit" data-e2e="mfa-btn-submit">{{t "mfa.submit"}}</button>
+    <button class="btn{{if not .D.KeyOptions}} btn-primary{{end}} btn-block" type="submit" data-e2e="mfa-btn-submit">{{t "mfa.submit"}}</button>
   </form>
   <form method="post" action="/logout" class="actions">{{template "csrf" .}}<button class="btn btn-block" type="submit" data-e2e="mfa-btn-cancel">{{t "form.cancel"}}</button></form>
 </div>{{end}}

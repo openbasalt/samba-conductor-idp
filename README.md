@@ -36,11 +36,19 @@ crewjam SAML SP, desktop and mobile ([`docs/usage-p4.md`](docs/usage-p4.md)).
   (`conductor-idp client|saml …`) and admin pages; exact redirect URIs,
   allowed AD groups by SID, scopes, consent (first-party skip), optional
   mandatory 2FA per client.
+- SAML single logout: signed HTTP-Redirect LogoutRequests from registered
+  SPs, a confirmation for anything else, a signed chain to the other SPs
+  of the session; IdP- and OIDC-initiated logouts reach them too.
 - 2FA: TOTP + recovery codes, mandatory for administrators (enrolled
-  through a one-time link), `off/optional/required` for others. Local
-  backend now; a client for conductor's verification socket is ready for
-  a single 2FA store (docs/decisions.md D4).
-- Security: no JavaScript at all (CSP `script-src 'none'`, form-action
+  through a one-time link), `off/optional/required` for others. On
+  conductor's host, conductor's 2FA instead (one enrollment and one policy
+  for both, security keys and passkeys included, through conductor's local
+  socket; docs/decisions.md D4).
+- Managed from conductor's "Single sign-on" section through a local
+  management API (clients, SPs with presets and metadata import, previews,
+  keys, settings, activity), or with the CLI and its own admin pages.
+- Security: no JavaScript except the WebAuthn script on the second-factor
+  page (CSP nonce + SRI; `script-src 'none'` everywhere else, form-action
   limited to the flow's own targets), CSRF tokens + Fetch metadata,
   `__Host-` cookies, rate limits per address and per account, hash-chained
   audit log, systemd sandbox, i18n en + pt-BR, `data-e2e` everywhere.
@@ -71,7 +79,8 @@ e2e/run-lab.sh [desktop|mobile]      # Playwright suite on the lab host
 | `internal/samlidp` | SAML IdP on crewjam, SAML keys |
 | `internal/web` | pages, flows, admin, middleware, sessions |
 | `internal/directory` | AD access through `ad` (user sign-in, service account) |
-| `internal/mfa` | local TOTP backend, conductor socket client |
+| `internal/mfa` | local TOTP backend, conductor socket client (TOTP, security keys) |
+| `internal/api`, `idpapi` | management API server and its public protocol (also the 2FA socket protocol conductor serves) |
 | `internal/store` | SQLite state, migrations, audit chain |
 | `internal/registry` | validation of client and SP registrations |
 | `deploy/systemd` | unit |

@@ -34,10 +34,17 @@ type SAMLSP struct {
 	Enabled          bool
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
+	// SLOURL and SLOBinding are the SP's single logout endpoint (empty:
+	// not part of single logout); SigningCert (DER) verifies its
+	// HTTP-Redirect LogoutRequests.
+	SLOURL      string
+	SLOBinding  string
+	SigningCert []byte
 }
 
 const spCols = `entity_id, name, acs_urls, nameid_format, nameid_source, attributes, allowed_groups, allow_all_users,
-	encrypt_assertion, encryption_cert, idp_initiated, default_relay, require_mfa, enabled, created_at, updated_at`
+	encrypt_assertion, encryption_cert, idp_initiated, default_relay, require_mfa, enabled, created_at, updated_at,
+	slo_url, slo_binding, signing_cert`
 
 func scanSP(row interface{ Scan(...any) error }) (*SAMLSP, error) {
 	var sp SAMLSP
@@ -45,7 +52,8 @@ func scanSP(row interface{ Scan(...any) error }) (*SAMLSP, error) {
 	var allowAll, encrypt, idpInit, mfa, enabled int
 	var created, updated int64
 	if err := row.Scan(&sp.EntityID, &sp.Name, &acs, &sp.NameIDFormat, &sp.NameIDSource, &attrs, &groups, &allowAll,
-		&encrypt, &sp.EncryptionCert, &idpInit, &sp.DefaultRelay, &mfa, &enabled, &created, &updated); err != nil {
+		&encrypt, &sp.EncryptionCert, &idpInit, &sp.DefaultRelay, &mfa, &enabled, &created, &updated,
+		&sp.SLOURL, &sp.SLOBinding, &sp.SigningCert); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
 		}
@@ -70,10 +78,11 @@ func attrsJSON(a []SAMLAttribute) string {
 func (s *Store) CreateSP(ctx context.Context, sp *SAMLSP) error {
 	now := s.now()
 	sp.CreatedAt, sp.UpdatedAt = now, now
-	_, err := s.db.ExecContext(ctx, `INSERT INTO saml_sps(`+spCols+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+	_, err := s.db.ExecContext(ctx, `INSERT INTO saml_sps(`+spCols+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		sp.EntityID, sp.Name, toJSON(nz(sp.ACSURLs)), sp.NameIDFormat, sp.NameIDSource, attrsJSON(sp.Attributes),
 		toJSON(nz(sp.AllowedGroups)), boolInt(sp.AllowAllUsers), boolInt(sp.EncryptAssertion), sp.EncryptionCert,
-		boolInt(sp.IdPInitiated), sp.DefaultRelay, boolInt(sp.RequireMFA), boolInt(sp.Enabled), nanos(now), nanos(now))
+		boolInt(sp.IdPInitiated), sp.DefaultRelay, boolInt(sp.RequireMFA), boolInt(sp.Enabled), nanos(now), nanos(now),
+		sp.SLOURL, sp.SLOBinding, sp.SigningCert)
 	if isUnique(err) {
 		return ErrConflict
 	}
@@ -108,10 +117,10 @@ func (s *Store) UpdateSP(ctx context.Context, sp *SAMLSP) error {
 	sp.UpdatedAt = s.now()
 	res, err := s.db.ExecContext(ctx, `UPDATE saml_sps SET name = ?, acs_urls = ?, nameid_format = ?, nameid_source = ?,
 		attributes = ?, allowed_groups = ?, allow_all_users = ?, encrypt_assertion = ?, encryption_cert = ?, idp_initiated = ?,
-		default_relay = ?, require_mfa = ?, enabled = ?, updated_at = ? WHERE entity_id = ?`,
+		default_relay = ?, require_mfa = ?, enabled = ?, updated_at = ?, slo_url = ?, slo_binding = ?, signing_cert = ? WHERE entity_id = ?`,
 		sp.Name, toJSON(nz(sp.ACSURLs)), sp.NameIDFormat, sp.NameIDSource, attrsJSON(sp.Attributes), toJSON(nz(sp.AllowedGroups)),
 		boolInt(sp.AllowAllUsers), boolInt(sp.EncryptAssertion), sp.EncryptionCert, boolInt(sp.IdPInitiated), sp.DefaultRelay,
-		boolInt(sp.RequireMFA), boolInt(sp.Enabled), nanos(sp.UpdatedAt), sp.EntityID)
+		boolInt(sp.RequireMFA), boolInt(sp.Enabled), nanos(sp.UpdatedAt), sp.SLOURL, sp.SLOBinding, sp.SigningCert, sp.EntityID)
 	return oneRow(res, err)
 }
 

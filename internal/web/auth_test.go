@@ -282,8 +282,8 @@ func TestClientRequiresMFAStepUp(t *testing.T) {
 type failingMFA struct{}
 
 func (failingMFA) Name() string { return "conductor" }
-func (failingMFA) Enrolled(context.Context, *directory.User) (bool, error) {
-	return false, mfa.ErrUnavailable
+func (failingMFA) State(context.Context, *directory.User) (mfa.State, error) {
+	return mfa.State{}, mfa.ErrUnavailable
 }
 func (failingMFA) Verify(context.Context, *directory.User, string) (mfa.Result, error) {
 	return mfa.Result{}, mfa.ErrUnavailable

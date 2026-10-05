@@ -43,8 +43,9 @@ cache_seconds = 60
 # required. Administrators always need it. Clients and SAML apps can
 # require it too.
 policy = "optional"
-# "local": the idp keeps its own TOTP enrollments. "conductor": verify
-# against conductor's 2FA store through its local socket (same host).
+# "local": the idp keeps its own TOTP enrollments. "conductor": one 2FA
+# for both (TOTP, recovery codes, security keys and conductor's policy)
+# through conductor's local socket (same host, conductor-mfa.socket).
 backend = "local"
 # conductor_socket = "/run/conductor/mfa.sock"
 admin_enrollment_requires_link = true
@@ -85,3 +86,12 @@ product_name = "Samba Conductor"
 [saml]
 enabled = true
 assertion_minutes = 5
+
+[api]
+# The management API for conductor's "Single sign-on" section (clients,
+# SAML service providers, keys, settings, activity). Enable it together
+# with conductor-idp-api.socket; only the conductor user may connect.
+enabled = false
+# socket = "/run/conductor-idp/api.sock"   # used when systemd passes no socket
+# socket_group = "conductor"               # group of a socket the service creates
+# allowed_users = ["conductor"]

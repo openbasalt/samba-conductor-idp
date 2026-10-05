@@ -36,7 +36,11 @@ ProtectSystem=strict
 ProtectHome=yes
 PrivateTmp=yes
 PrivateDevices=yes
-PrivateUsers=yes
+# PrivateUsers stays off: with a private user namespace the peer of every
+# management API connection (conductor-idp-api.socket) would read as
+# "nobody" and the SO_PEERCRED check (only the conductor user) would refuse
+# conductor.
+PrivateUsers=no
 ProtectHostname=yes
 ProtectClock=yes
 ProtectKernelTunables=yes
@@ -59,8 +63,9 @@ SystemCallErrorNumber=EPERM
 ReadOnlyPaths=/etc/conductor-idp
 InaccessiblePaths=-/etc/conductor-idp/credentials
 DevicePolicy=closed
-# With mfa.backend = "conductor", allow conductor's verification socket:
-# ReadWritePaths=/run/conductor
+# With mfa.backend = "conductor", the idp connects to conductor's 2FA
+# socket (/run/conductor/mfa.sock, conductor-mfa.socket); connecting to a
+# socket needs no write access to /run.
 
 [Install]
 WantedBy=multi-user.target

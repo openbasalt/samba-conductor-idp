@@ -1,4 +1,4 @@
-policy_module(conductor_idp, 1.0.0)
+policy_module(conductor_idp, 1.1.0)
 
 # SELinux policy of conductor-idp (conductor_idp_t, the unprivileged
 # "conductor-idp" user): its configuration and state, its HTTPS port, and
@@ -30,6 +30,11 @@ files_type(conductor_idp_var_lib_t)
 type conductor_idp_tmp_t;
 files_tmp_file(conductor_idp_tmp_t)
 
+# /run/conductor-idp: api.sock, created by systemd for
+# conductor-idp-api.socket (the management API conductor uses).
+type conductor_idp_var_run_t;
+files_pid_file(conductor_idp_var_run_t)
+
 ########################################
 #
 # conductor-idp local policy
@@ -37,7 +42,7 @@ files_tmp_file(conductor_idp_tmp_t)
 
 allow conductor_idp_t self:process { getsched setsched signal_perms };
 allow conductor_idp_t self:fifo_file rw_fifo_file_perms;
-allow conductor_idp_t self:unix_stream_socket create_stream_socket_perms;
+allow conductor_idp_t self:unix_stream_socket { accept listen create_stream_socket_perms };
 allow conductor_idp_t self:unix_dgram_socket create_socket_perms;
 allow conductor_idp_t self:netlink_route_socket r_netlink_socket_perms;
 allow conductor_idp_t self:tcp_socket { accept listen create_stream_socket_perms };
@@ -50,6 +55,11 @@ read_lnk_files_pattern(conductor_idp_t, conductor_idp_conf_t, conductor_idp_conf
 manage_dirs_pattern(conductor_idp_t, conductor_idp_var_lib_t, conductor_idp_var_lib_t)
 manage_files_pattern(conductor_idp_t, conductor_idp_var_lib_t, conductor_idp_var_lib_t)
 files_search_var_lib(conductor_idp_t)
+
+# The management API's activation socket (systemd creates it).
+list_dirs_pattern(conductor_idp_t, conductor_idp_var_run_t, conductor_idp_var_run_t)
+rw_sock_files_pattern(conductor_idp_t, conductor_idp_var_run_t, conductor_idp_var_run_t)
+files_search_pids(conductor_idp_t)
 
 manage_dirs_pattern(conductor_idp_t, conductor_idp_tmp_t, conductor_idp_tmp_t)
 manage_files_pattern(conductor_idp_t, conductor_idp_tmp_t, conductor_idp_tmp_t)
@@ -85,6 +95,26 @@ corenet_tcp_bind_http_port(conductor_idp_t)
 corenet_tcp_connect_ldap_port(conductor_idp_t)
 corenet_tcp_connect_kerberos_port(conductor_idp_t)
 corenet_tcp_connect_kerberos_password_port(conductor_idp_t)
+
+# SAML metadata imported by URL from conductor's panel (https, once).
+corenet_tcp_connect_http_port(conductor_idp_t)
+
+########################################
+#
+# conductor uses the management API ("Single sign-on" section), and
+# conductor-idp uses conductor's second-factor socket (mfa.backend =
+# "conductor").
+#
+
+optional_policy(`
+	gen_require(`
+		type conductor_t, conductor_var_run_t;
+	')
+
+	conductor_idp_api_stream_connect(conductor_t)
+	# /run/conductor/mfa.sock (conductor-mfa.socket), served by conductor.
+	stream_connect_pattern(conductor_idp_t, conductor_var_run_t, conductor_var_run_t, conductor_t)
+')
 
 ########################################
 #

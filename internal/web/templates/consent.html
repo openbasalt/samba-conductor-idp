@@ -3,6 +3,7 @@
   <h1 data-e2e="consent-text-title">{{t "consent.heading" .D.App}}</h1>
   <p class="muted small" data-e2e="consent-text-host">{{t "consent.host" .D.Host}}</p>
   <p>{{t "consent.intro"}}</p>
+  {{if .D.Note}}<p class="alert-info" data-e2e="consent-text-note">{{.D.Note}}</p>{{end}}
   <ul data-e2e="consent-list-scopes">{{range .D.Scopes}}<li data-e2e="consent-item-{{e2e .Name}}">{{.Text}}</li>{{end}}</ul>
   <form method="post" action="/consent" class="row">
     {{template "csrf" .}}{{template "cont" .}}

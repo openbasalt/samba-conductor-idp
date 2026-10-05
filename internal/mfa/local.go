@@ -31,13 +31,13 @@ func (l *Local) Name() string { return "local" }
 // CanEnroll implements Backend.
 func (l *Local) CanEnroll() bool { return true }
 
-// Enrolled implements Backend.
-func (l *Local) Enrolled(ctx context.Context, u *directory.User) (bool, error) {
+// State implements Backend: the idp applies its own policy.
+func (l *Local) State(ctx context.Context, u *directory.User) (State, error) {
 	_, err := l.Store.GetTOTP(ctx, u.GUID)
 	if errors.Is(err, store.ErrNotFound) {
-		return false, nil
+		return State{}, nil
 	}
-	return err == nil, err
+	return State{Enrolled: err == nil}, err
 }
 
 // Verify implements Backend: a TOTP code (each step accepted once) or an

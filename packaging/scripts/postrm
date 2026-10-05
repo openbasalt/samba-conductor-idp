@@ -6,7 +6,7 @@
 # copies), and a reused UID would own them.
 set -e
 
-ENABLE="conductor-idp.service"
+ENABLE="conductor-idp.service conductor-idp-api.socket"
 
 case "$1" in
 remove)

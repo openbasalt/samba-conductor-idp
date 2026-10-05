@@ -1,0 +1,10 @@
+{{define "title"}}{{t "slo.title"}}{{end}}
+{{define "content"}}<div class="card narrow">
+  <h1>{{t "slo.title"}}</h1>
+  <p>{{t "slo.continue_intro" .D.App}}</p>
+  <form method="post" action="{{.D.Form.URL}}" data-e2e="slo-form-post">
+    <input type="hidden" name="{{.D.Form.Field}}" value="{{.D.Form.Value}}">
+    {{if .D.Form.RelayState}}<input type="hidden" name="RelayState" value="{{.D.Form.RelayState}}">{{end}}
+    <button class="btn btn-primary btn-block" type="submit" autofocus data-e2e="slo-btn-continue">{{t "saml.continue"}}</button>
+  </form>
+</div>{{end}}

@@ -20,8 +20,9 @@ func (s *Server) pages() []route {
 		{method: "POST", pattern: "/login/password", perm: PermPreAuth, stages: []stage{stageMustChange}, h: s.handlePassword},
 		// /login/2fa also serves step-up for signed-in users whose
 		// application requires a second factor.
-		{method: "GET", pattern: "/login/2fa", perm: PermPreAuth, stages: append(signin, stageFull), h: s.handleMFAPage},
+		{method: "GET", pattern: "/login/2fa", perm: PermPreAuth, stages: append(signin, stageFull), h: s.handleMFAPage, script: true},
 		{method: "POST", pattern: "/login/2fa", perm: PermPreAuth, stages: append(signin, stageFull), h: s.handleMFA},
+		{method: "POST", pattern: "/login/2fa/key", perm: PermPreAuth, stages: append(signin, stageFull), h: s.handleMFAKey},
 		{method: "GET", pattern: "/login/enroll", perm: PermPreAuth, stages: enroll, h: s.handleEnrollPage},
 		{method: "GET", pattern: "/login/enroll/qr.png", perm: PermPreAuth, stages: enroll, h: s.handleEnrollQR},
 		{method: "POST", pattern: "/login/enroll", perm: PermPreAuth, stages: enroll, h: s.handleEnroll},
@@ -58,6 +59,11 @@ func (s *Server) pages() []route {
 			route{method: "GET", pattern: samlidp.SSOPath, perm: PermPublic, h: s.handleSAMLSSO},
 			route{method: "POST", pattern: samlidp.SSOPath, perm: PermPublic, noCSRF: true, h: s.handleSAMLSSO, maxBody: 256 << 10},
 			route{method: "POST", pattern: "/saml/start", perm: PermUser, h: s.handleSAMLStart},
+			// Single logout: LogoutRequests and LogoutResponses from service
+			// providers (cross-site POSTs by design, like the SSO endpoint).
+			route{method: "GET", pattern: samlidp.SLOPath, perm: PermPublic, h: s.handleSAMLSLO},
+			route{method: "POST", pattern: samlidp.SLOPath, perm: PermPublic, noCSRF: true, h: s.handleSAMLSLO, maxBody: 128 << 10},
+			route{method: "POST", pattern: samlidp.SLOPath + "/confirm", perm: PermPublic, h: s.handleSAMLSLOConfirm},
 			route{method: "GET", pattern: "/admin/saml", perm: PermAdmin, h: s.handleAdminSPs},
 			route{method: "GET", pattern: "/admin/saml/new", perm: PermAdmin, h: s.handleAdminSPNew},
 			route{method: "POST", pattern: "/admin/saml", perm: PermAdmin, h: s.handleAdminSPCreate, maxBody: 1 << 20},

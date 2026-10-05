@@ -8,6 +8,7 @@
 <title>{{template "title" .}} · {{.Product}}</title>
 <link rel="stylesheet" href="/static/app.css?v={{.Version}}">
 <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+{{if .Nonce}}<script src="/static/webauthn.js?v={{.Version}}" nonce="{{.Nonce}}" integrity="{{.ScriptSRI}}" defer></script>{{end}}
 </head>
 <body>
 <a class="skip" href="#main">{{t "a11y.skip"}}</a>

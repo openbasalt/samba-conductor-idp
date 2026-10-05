@@ -6,6 +6,7 @@ import (
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/hex"
+	"github.com/openbasalt/samba-conductor-idp/internal/samlidp"
 	"net/http"
 	"sync"
 	"time"
@@ -85,6 +86,12 @@ type Session struct {
 	recoveryCodes []string
 	mfaFailures   int
 	flashes       []flash
+	// keyCeremony is the pending security key assertion (conductor's
+	// ceremony ID, single use).
+	keyCeremony string
+	// participants are the SAML service providers this session signed in
+	// to (single logout).
+	participants []samlidp.Participant
 }
 
 type flash struct {
@@ -139,6 +146,21 @@ func newSessions(idle, absolute time.Duration, now func() time.Time) *sessions {
 	return &sessions{m: map[string]*Session{}, idle: idle, absolute: absolute, now: now}
 }
 
+// setTimeouts changes the lifetimes. A shorter absolute lifetime also
+// shortens running sessions (never lengthens them).
+func (t *sessions) setTimeouts(idle, absolute time.Duration) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.idle, t.absolute = idle, absolute
+	for _, s := range t.m {
+		s.mu.Lock()
+		if limit := s.created.Add(absolute); limit.Before(s.expires) {
+			s.expires = limit
+		}
+		s.mu.Unlock()
+	}
+}
+
 func newToken() string {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
@@ -162,9 +184,9 @@ func (t *sessions) create(s *Session) string {
 	now := t.now()
 	s.hash = tokenHash(tok)
 	s.csrf = newToken()
-	s.created, s.lastSeen, s.expires = now, now, now.Add(t.absolute)
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	s.created, s.lastSeen, s.expires = now, now, now.Add(t.absolute)
 	if len(t.m) >= maxSessions {
 		t.evictLocked(now)
 	}
@@ -182,19 +204,25 @@ func (t *sessions) get(tok string) *Session {
 	now := t.now()
 	t.mu.Lock()
 	s, ok := t.m[h]
+	idle := t.idle
 	t.mu.Unlock()
 	if !ok {
 		return nil
 	}
+	// Lock order is table then session: never hold the session's lock
+	// while taking the table's.
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	if now.After(s.expires) || now.Sub(s.lastSeen) > t.idle {
+	dead := now.After(s.expires) || now.Sub(s.lastSeen) > idle
+	if !dead {
+		s.lastSeen = now
+	}
+	s.mu.Unlock()
+	if dead {
 		t.mu.Lock()
 		delete(t.m, h)
 		t.mu.Unlock()
 		return nil
 	}
-	s.lastSeen = now
 	return s
 }
 

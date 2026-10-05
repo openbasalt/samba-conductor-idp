@@ -58,32 +58,40 @@ first continued it (`__Host-idp-browser`, a random cookie, hashed in the
 row) and serves the callback only to that browser, so a leaked request ID
 is worthless. SAML pending requests are bound the same way.
 
-## D4. Second factor: local backend now, conductor as the source of truth
+## D4. Second factor: conductor as the source of truth
 
-The spec prefers one source of truth for 2FA. Decision:
-
-- `mfa.backend = "conductor"` is the target when the idp runs on the same
-  host as conductor: the idp asks conductor's 2FA store through a local
-  Unix socket (`internal/mfa/conductor.go` documents protocol v1:
-  `status` and `verify` by user SID, one JSON request per connection, peer
-  checked with SO_PEERCRED by conductor, per-user rate limits and audit
-  on conductor's side). Enrollment then happens only in conductor.
+- `mfa.backend = "conductor"`: when the idp runs on conductor's host, it
+  asks conductor's 2FA store through conductor's local Unix socket
+  (protocol version 2 in `idpapi/mfa.go`: `status`, `verify`, `key.begin`,
+  `key.finish`, by user SID, one JSON request per connection). conductor
+  serves it (conductor-mfa.socket, `[idp] mfa_socket`), checks the peer
+  with SO_PEERCRED (only the conductor-idp user), rate limits per user with
+  the same limiter as its own sign-in, and audits every verification. Users
+  enroll in conductor only.
+- The policy is conductor's too: the request carries the user's group SIDs
+  (read by the idp's service account) and conductor maps them to its own
+  roles, exactly as at its sign-in, to answer whether a second factor is
+  required and whether a security key is mandatory
+  (`webauthn.admin_required`; TOTP codes are then refused at the source,
+  recovery codes stay the emergency path). The idp still requires a second
+  factor for its own administrators and for clients and SPs marked
+  "require MFA".
 - `mfa.backend = "local"` (default) keeps TOTP secrets in the idp's
   database, sealed with AES-256-GCM under the master key and bound to the
   user's objectGUID, with hashed single-use recovery codes. It is needed
-  when the idp runs elsewhere (it only needs LDAPS/Kerberos), and today,
-  because conductor does not serve the socket yet.
-- The server side of the socket is not implemented (P4 may not change
-  conductor); the client and a fake server test exist. Upstream item for
-  conductor.
-- Policy is conductor's: administrators always (one-time enrollment link
-  for an administrator without 2FA, `enroll-link` CLI or admin page);
-  others `off`/`optional`/`required`; a client or SAML app can require it
-  (step-up for an already signed-in user). Failure of the 2FA backend
-  fails closed.
-- WebAuthn is not offered: credentials are bound to the RP ID (conductor's
-  host name), so they cannot be reused by an idp on another name, and the
-  spec keeps pages script-free except for WebAuthn. Deferred.
+  when the idp runs elsewhere (it only needs LDAPS/Kerberos).
+- Security keys and passkeys (conductor backend): the IdP's second-factor
+  page starts an assertion through conductor (`key.begin` returns the
+  options; the ceremony stays in conductor, single use, five minutes,
+  bound to the user), runs the WebAuthn script under a per-response CSP
+  nonce with Subresource Integrity (the only script of the IdP), and sends
+  the result back (`key.finish`; conductor validates it, including the
+  origin and the signature counter). Credentials are bound to conductor's
+  RP ID, so the IdP's origin must be one of conductor's WebAuthn origins:
+  a shared parent domain as RP ID (`conductor.example.com` and
+  `idp.example.com` under `example.com`), or WebAuthn related origins,
+  which conductor publishes at `/.well-known/webauthn`.
+- A failure of the 2FA backend fails closed.
 
 ## D5. Sessions and cookies
 
@@ -100,7 +108,10 @@ The spec prefers one source of truth for 2FA. Decision:
 
 ## D6. CSP and forms that continue cross-origin
 
-No script on any page (`script-src 'none'`). CSP `form-action` is applied
+No script on any page (`script-src 'none'`), except the WebAuthn script
+on the second-factor page when the user has a security key (conductor
+backend, D4): one self-hosted file under a per-response nonce and
+Subresource Integrity, with `connect-src 'none'`. CSP `form-action` is applied
 by browsers to the redirects that follow a form submission, so a sign-in
 form that ends in a redirect to the RP would be blocked by `form-action
 'self'`. Pages of a flow therefore allow exactly `'self'` plus the origin
@@ -137,7 +148,11 @@ be added later if one click less is preferred.
   next to the current one; the current key keeps signing until the
   overlap ends (SPs pin certificates; Google Workspace takes one at a
   time). `-immediate` exists for emergencies.
-- Single logout (SLO) is not implemented (deferred).
+- Single logout: see D11.
+- SP metadata imported by URL from conductor's panel is fetched once by
+  the idp (https only, also after redirects, at most 1 MiB, 15 s) and only
+  prefills the form the administrator reviews; it is never fetched again
+  and never trusted at runtime.
 
 ## D8. Keys and secrets
 
@@ -173,3 +188,64 @@ parties (example RP, example SP, Grafana) run in containers on the host.
 - Group membership fallback when tokenGroups is unreadable (in-chain search
   + primary group): the same logic as `conductor/internal/directory`.
 - `NormalizeUsername` (also duplicated in conductor).
+
+## D10. Management API for conductor
+
+- conductor's "Single sign-on" section is a client of a local management
+  API (`idpapi`, the same design as conductor-sync's `syncapi`): a Unix
+  socket handed over by systemd (conductor-idp-api.socket, owned by
+  conductor-idp and the conductor group, 0660) or created by the service,
+  SO_PEERCRED admitting only the conductor user (the unit runs with
+  `PrivateUsers=no` so the peer's UID is visible), one typed, allowlisted,
+  strictly decoded request per connection.
+- conductor decides who may do what (administrators only, re-checked
+  against AD) and requires the password and a fresh second factor before
+  any mutation; the idp trusts that decision because only conductor's UID
+  can connect, and records every mutation in its own audit chain with the
+  acting AD user (`conductor:<user>@<address>`).
+- Validation stays in one place: the API uses the same registry as the
+  CLI and the idp's own admin pages. conductor previews a draft (claims or
+  assertion for a real user) before proposing it, which also validates it.
+- Secrets: a confidential client's secret is generated by the idp and
+  returned once (create, rotate); conductor shows it once and keeps it
+  nowhere. Signing keys never leave the idp; only certificates and key IDs
+  do.
+- Certificates of an SP left empty in an update keep the registered ones;
+  clearing them is explicit.
+
+## D11. SAML single logout
+
+- Endpoint `<issuer>/saml/slo`, HTTP-Redirect and HTTP-POST, advertised in
+  the metadata. An SP takes part when its registration has a single logout
+  URL and binding (from its metadata, HTTP-Redirect preferred).
+- An incoming LogoutRequest is parsed with the same bounds as an
+  AuthnRequest (size, round-trip validation, no DTD, age within five
+  minutes, `Destination` = the SLO URL). The idp verifies no XML signature
+  (D7). A request signed with the HTTP-Redirect query signature (RSA with
+  SHA-256 or SHA-512) by the SP's registered signing certificate ends the
+  session at once; anything else (unsigned, HTTP-POST) shows a
+  confirmation page, as for an OpenID Connect logout without an ID token
+  hint, so a forged request cannot sign a user out behind their back.
+- The request must name the browser session's own participant (NameID and,
+  when given, SessionIndex); otherwise nothing is ended in that browser.
+- The session ends first; then every other SP of the session with a single
+  logout URL receives a LogoutRequest in turn (query-signed for
+  HTTP-Redirect, XML-signed for HTTP-POST, which needs one click without
+  script), and finally the initiator gets a LogoutResponse (`Success`, or
+  `PartialLogout` when a participant could not be logged out). A logout
+  started at the IdP or by an OpenID Connect client (end_session) runs the
+  same chain before going to its destination.
+- The chain is in memory, bound to the browser that started it (a
+  response from another browser neither continues nor consumes it), and
+  expires after ten minutes. Participants are recorded per browser
+  session at each assertion (entity ID, NameID, SessionIndex).
+
+## D12. Settings edited from conductor
+
+- Session lifetimes (idle, absolute), the local second-factor policy and a
+  consent screen note per language are stored in the database (one
+  versioned row, optimistic concurrency) and override `idp.toml`, whose
+  values stay the defaults. They apply at once, also to running sessions
+  (a shorter absolute lifetime ends them sooner, never later).
+- With the conductor 2FA backend the local policy is not used; conductor
+  shows its own policy instead.

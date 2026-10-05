@@ -1,0 +1,10 @@
+{{define "title"}}{{t "slo.title"}}{{end}}
+{{define "content"}}<div class="card narrow">
+  <h1>{{t "slo.title"}}</h1>
+  <p data-e2e="slo-text-confirm">{{t "slo.confirm" .D.App}}</p>
+  <form method="post" action="/saml/slo/confirm" class="row">
+    {{template "csrf" .}}<input type="hidden" name="t" value="{{.D.T}}">
+    <button class="btn btn-primary" type="submit" name="decision" value="signout" data-e2e="slo-btn-confirm">{{t "logout.yes"}}</button>
+    <button class="btn" type="submit" name="decision" value="stay" data-e2e="slo-btn-stay">{{t "logout.no"}}</button>
+  </form>
+</div>{{end}}

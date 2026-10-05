@@ -1,7 +1,9 @@
 // Command example-sp is a minimal SAML 2.0 service provider for testing
 // conductor-idp (crewjam/saml samlsp): it publishes its metadata at
 // /saml/metadata (import it in the idp), signs in through the idp and
-// shows the NameID and attributes it received. Not for production use.
+// shows the NameID and attributes it received. /logout starts a SAML
+// single logout (HTTP-Redirect, query-signed with the SP's key) and
+// /saml/slo answers the idp's logout messages. Not for production use.
 //
 //	example-sp -idp-metadata https://idp.example.com/saml/metadata -ca ca.pem \
 //	    -url http://localhost:8000 -listen 127.0.0.1:8000
@@ -32,7 +34,11 @@ var page = template.Must(template.New("p").Parse(`<!doctype html><html><head><me
 <body><h1 data-e2e="sp-text-title">example-sp: signed in</h1>
 <p>NameID: <b data-e2e="sp-text-nameid">{{.NameID}}</b></p>
 <table border="1" data-e2e="sp-table-attributes">{{range .Attrs}}<tr><td>{{.K}}</td><td data-e2e="sp-attr-{{.K}}">{{.V}}</td></tr>{{end}}</table>
+<p><a href="/logout" data-e2e="sp-link-logout">Sign out (single logout)</a></p>
 </body></html>`))
+
+var signedOut = []byte(`<!doctype html><html><head><meta charset="utf-8"><title>example-sp</title></head>
+<body><h1 data-e2e="sp-text-signed-out">example-sp: signed out</h1></body></html>`)
 
 func main() {
 	idpMD := flag.String("idp-metadata", "", "idp metadata URL")
@@ -65,6 +71,9 @@ func main() {
 		log.Fatal(err)
 	}
 	http.Handle("/saml/", sp)
+	slo := &sloHandler{sp: sp, idpCert: idpSigningCert(md)}
+	http.HandleFunc("/saml/slo", slo.serveSLO)
+	http.HandleFunc("/logout", slo.logout)
 	http.Handle("/", sp.RequireAccount(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		s := samlsp.SessionFromContext(r.Context())
 		type kv struct{ K, V string }

@@ -71,6 +71,10 @@ contents:
     src: ${BUILD}/systemd/conductor-idp.service
     dst: /usr/lib/systemd/system/conductor-idp.service
     file_info: {mode: 0644}
+  - expand: true
+    src: ${BUILD}/systemd/conductor-idp-api.socket
+    dst: /usr/lib/systemd/system/conductor-idp-api.socket
+    file_info: {mode: 0644}
   - src: packaging/sysusers.conf
     dst: /usr/lib/sysusers.d/conductor-idp.conf
     file_info: {mode: 0644}

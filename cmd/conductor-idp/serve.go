@@ -12,12 +12,15 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openbasalt/samba-conductor-idp/internal/api"
 	"github.com/openbasalt/samba-conductor-idp/internal/config"
 	"github.com/openbasalt/samba-conductor-idp/internal/directory"
 	"github.com/openbasalt/samba-conductor-idp/internal/mfa"
 	"github.com/openbasalt/samba-conductor-idp/internal/oidcp"
 	"github.com/openbasalt/samba-conductor-idp/internal/samlidp"
 	"github.com/openbasalt/samba-conductor-idp/internal/secret"
+	"github.com/openbasalt/samba-conductor-idp/internal/settings"
+	"github.com/openbasalt/samba-conductor-idp/internal/sockutil"
 	"github.com/openbasalt/samba-conductor-idp/internal/store"
 	"github.com/openbasalt/samba-conductor-idp/internal/web"
 )
@@ -174,6 +177,31 @@ func cmdServe(ctx context.Context, cfgPath string, _ []string) error {
 		SAML: samlIdP, Keys: rotator{p}, Logger: log, Version: version})
 	if err != nil {
 		return err
+	}
+	// Settings edited from conductor's panel override the file.
+	sv, err := settings.Load(ctx, e.store, e.cfg)
+	if err != nil {
+		return err
+	}
+	srv.ApplySettings(sv.Settings)
+	if e.cfg.API.Enabled {
+		uids, err := sockutil.UIDs(e.cfg.APIAllowedUsers(), e.cfg.API.AllowedUIDs)
+		if err != nil {
+			return fmt.Errorf("api: %w", err)
+		}
+		as, err := api.New(api.Options{Config: e.cfg, Store: e.store, Dir: dir, SAML: samlIdP, SAMLKeys: p.saml, Keys: rotator{p},
+			Apply: srv.ApplySettings, Logger: log, Version: version, AllowedUIDs: uids})
+		if err != nil {
+			return err
+		}
+		if err := as.Listen(); err != nil {
+			return err
+		}
+		go func() {
+			if err := as.Serve(ctx); err != nil {
+				log.Error("management API stopped", "err", err)
+			}
+		}()
 	}
 	hs := &http.Server{
 		Addr:              e.cfg.Server.Listen,

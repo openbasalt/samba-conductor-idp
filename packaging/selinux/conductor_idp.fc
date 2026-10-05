@@ -6,3 +6,5 @@
 /etc/conductor-idp/credentials(/.*)?		gen_context(system_u:object_r:conductor_idp_cred_t,s0)
 
 /var/lib/conductor-idp(/.*)?			gen_context(system_u:object_r:conductor_idp_var_lib_t,s0)
+
+/run/conductor-idp(/.*)?			gen_context(system_u:object_r:conductor_idp_var_run_t,s0)

@@ -5,10 +5,13 @@ package web
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
 	"html/template"
 	"log/slog"
 	"net/http"
 	"net/netip"
+	"sync/atomic"
 	"time"
 
 	"github.com/zitadel/oidc/v3/pkg/op"
@@ -21,6 +24,7 @@ import (
 	"github.com/openbasalt/samba-conductor-idp/internal/oidcp"
 	"github.com/openbasalt/samba-conductor-idp/internal/ratelimit"
 	"github.com/openbasalt/samba-conductor-idp/internal/samlidp"
+	"github.com/openbasalt/samba-conductor-idp/internal/settings"
 	"github.com/openbasalt/samba-conductor-idp/internal/store"
 )
 
@@ -65,6 +69,15 @@ type Server struct {
 	accountFails *ratelimit.Failures
 	endSessions  *endSessionTickets
 	adminSIDs    []sid.SID
+
+	// keyBackend is set when the 2FA backend verifies security keys.
+	keyBackend mfa.KeyBackend
+	// scriptSRI is the Subresource Integrity hash of static/webauthn.js.
+	scriptSRI string
+	// rt holds the settings edited from conductor's panel.
+	rt atomic.Pointer[runtimeSettings]
+	// logouts are the single logout chains in progress.
+	logouts *logoutChains
 }
 
 // New builds the server and its routes.
@@ -81,6 +94,15 @@ func New(o Options) (*Server, error) {
 	if l, ok := o.MFA.(*mfa.Local); ok {
 		s.local = l
 	}
+	if k, ok := o.MFA.(mfa.KeyBackend); ok {
+		s.keyBackend = k
+	}
+	js, err := staticFS.ReadFile("static/webauthn.js")
+	if err != nil {
+		return nil, err
+	}
+	sum := sha256.Sum256(js)
+	s.scriptSRI = "sha256-" + base64.StdEncoding.EncodeToString(sum[:])
 	cat, err := i18n.Load()
 	if err != nil {
 		return nil, err
@@ -108,6 +130,8 @@ func New(o Options) (*Server, error) {
 	s.tokenLimit = ratelimit.NewBucket(s.cfg.RateLimit.TokenPerIPPerMinute, time.Minute)
 	s.accountFails = ratelimit.NewFailures(s.cfg.RateLimit.AccountFailures, time.Duration(s.cfg.RateLimit.AccountWindowMinutes)*time.Minute)
 	s.endSessions = newEndSessionTickets(now)
+	s.logouts = newLogoutChains(now)
+	s.ApplySettings(settings.Defaults(s.cfg))
 	if s.oidc != nil {
 		s.oidc.EndSessionURL = s.endSessionURL
 	}
@@ -123,6 +147,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) { s.mux.Serve
 func (s *Server) Sweep() {
 	s.sess.sweep()
 	s.endSessions.sweep()
+	s.logouts.sweep()
 }
 
 // SetLimiterClock replaces the limiters' clock (tests).

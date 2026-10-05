@@ -41,6 +41,9 @@ type route struct {
 	noCSRF bool
 	// maxBody overrides the request body limit.
 	maxBody int64
+	// script allows the self-hosted WebAuthn script on this page (CSP
+	// nonce). Only the second-factor page sets it.
+	script bool
 }
 
 // reqCtx carries one request through a handler.
@@ -59,6 +62,8 @@ type reqCtx struct {
 	// relying party's redirect URI or the SP's ACS URL): CSP form-action
 	// also applies to the redirects that follow a form submission.
 	formTargets []string
+	// nonce of the page's script (script routes only).
+	nonce string
 }
 
 func (rc *reqCtx) ctx() context.Context { return rc.r.Context() }
@@ -74,15 +79,20 @@ const basePolicy = "default-src 'none'; script-src 'none'; style-src 'self'; img
 	"connect-src 'none'; frame-ancestors 'none'; base-uri 'none'"
 
 // csp builds the page policy: form-action is 'self' plus the origins the
-// page's flow may legitimately continue to. There is no script at all.
-func csp(formTargets []string) string {
+// page's flow may legitimately continue to. There is no script, except the
+// WebAuthn script carrying the response's nonce on the second-factor page.
+func csp(formTargets []string, nonce string) string {
 	fa := "'self'"
 	for _, t := range formTargets {
 		if o := origin(t); o != "" && !strings.Contains(fa, " "+o) {
 			fa += " " + o
 		}
 	}
-	return basePolicy + "; form-action " + fa
+	p := basePolicy
+	if nonce != "" {
+		p = strings.Replace(p, "script-src 'none'", "script-src 'nonce-"+nonce+"'", 1)
+	}
+	return p + "; form-action " + fa
 }
 
 // origin returns scheme://host[:port] of a URL, or "" when unusable in a
@@ -97,7 +107,7 @@ func origin(raw string) string {
 }
 
 func (s *Server) securityHeaders(h http.Header) {
-	h.Set("Content-Security-Policy", csp(nil))
+	h.Set("Content-Security-Policy", csp(nil, ""))
 	h.Set("X-Content-Type-Options", "nosniff")
 	h.Set("X-Frame-Options", "DENY")
 	h.Set("Referrer-Policy", "no-referrer")
@@ -156,6 +166,9 @@ func (s *Server) wrap(rt route) http.Handler {
 		}
 		r.Body = http.MaxBytesReader(w, r.Body, limit)
 		rc := &reqCtx{s: s, w: w, r: r, route: rt, ip: s.clientIP(r)}
+		if rt.script && r.Method == http.MethodGet {
+			rc.nonce = newToken()[:24]
+		}
 		rc.r = r.WithContext(context.WithValue(context.WithValue(r.Context(), requestKey{}, r), ipKey{}, rc.ip))
 		s.prefs(rc)
 		if c, err := r.Cookie(sessionCookie); err == nil {

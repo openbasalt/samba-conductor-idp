@@ -7,7 +7,7 @@
 # enabled state.
 set -e
 
-ENABLE="conductor-idp.service"
+ENABLE="conductor-idp.service conductor-idp-api.socket"
 RESTART="conductor-idp.service"
 
 # override OWNER GROUP MODE PATH: a dpkg-statoverride for a path the package
