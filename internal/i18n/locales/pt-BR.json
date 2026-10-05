@@ -211,6 +211,7 @@
  "signin.enroll_link": "Entre para configurar a autenticação em dois fatores da sua conta de administrador.",
  "signin.err.account_expired": "Esta conta expirou.",
  "signin.err.admin_link": "Administradores configuram a autenticação em dois fatores com um link de uso único gerado por outro administrador.",
+ "signin.err.admin_only": "Esta página de entrada é só para administradores. Entre nos aplicativos a partir do próprio aplicativo.",
  "signin.err.clock": "O relógio do servidor está muito diferente dos controladores de domínio. Avise um administrador.",
  "signin.err.disabled": "Esta conta está desativada.",
  "signin.err.enroll_in_conductor": "A autenticação em dois fatores é obrigatória. Configure-a primeiro no Samba Conductor e depois entre aqui.",

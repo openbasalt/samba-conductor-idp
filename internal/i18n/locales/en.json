@@ -211,6 +211,7 @@
  "signin.enroll_link": "Sign in to set up two-factor authentication for your administrator account.",
  "signin.err.account_expired": "This account has expired.",
  "signin.err.admin_link": "Administrators set up two-factor authentication with a one-time link from another administrator.",
+ "signin.err.admin_only": "This sign-in page is for administrators only. Sign in to applications from the application itself.",
  "signin.err.clock": "The server clock differs too much from the domain controllers. Tell an administrator.",
  "signin.err.disabled": "This account is disabled.",
  "signin.err.enroll_in_conductor": "Two-factor authentication is required. Set it up in Samba Conductor first, then sign in here.",

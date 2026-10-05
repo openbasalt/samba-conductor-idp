@@ -232,16 +232,24 @@ func TestAdminCreatesClientAndRotates(t *testing.T) {
 // adminBrowser signs in the test administrator with 2FA.
 func (h *harness) adminBrowser() *browser {
 	h.t.Helper()
+	b := h.browser()
+	h.signInAdmin(b)
+	return b
+}
+
+// signInAdmin enrolls and signs in the test administrator with 2FA in a
+// browser (on the main or the admin listener) and returns the TOTP secret.
+func (h *harness) signInAdmin(b *browser) []byte {
+	h.t.Helper()
 	tok := "Tok3n-for-the-admin-enrollment-link-abcdefghij"
 	if err := h.store.CreateEnrollLink(context.Background(), LinkHash(tok), "admin", "test", time.Hour); err != nil {
 		h.t.Fatal(err)
 	}
-	b := h.browser()
 	b.get("/login?enroll=" + tok)
 	b.submit("/login", url.Values{"username": {"admin"}, "password": {"Passw0rd!admin"}, "enroll": {tok}})
-	b.enroll()
+	sec := b.enroll()
 	b.submit("/login/continue", url.Values{})
-	return b
+	return sec
 }
 
 func TestPolicyRequiredEnrollsUsers(t *testing.T) {

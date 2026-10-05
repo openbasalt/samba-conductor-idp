@@ -74,11 +74,43 @@ type Server struct {
 	keyBackend mfa.KeyBackend
 	// scriptSRI is the Subresource Integrity hash of static/webauthn.js.
 	scriptSRI string
-	// rt holds the settings edited from conductor's panel.
-	rt atomic.Pointer[runtimeSettings]
+	// rt holds the settings edited from conductor's panel (shared with
+	// the admin listener's server).
+	rt *atomic.Pointer[runtimeSettings]
 	// logouts are the single logout chains in progress.
 	logouts *logoutChains
+
+	// surface is what this handler serves: the public pages, the admin
+	// pages, or both (admin pages on the main listener).
+	surface surface
+	// admin is the admin listener's handler when the admin pages have a
+	// listener of their own (server.admin_listen), else nil.
+	admin *Server
+	// allSessions are the session tables of every listener (a 2FA reset
+	// ends the user's sessions everywhere).
+	allSessions []*sessions
+	// Cookie names and the session cookie's SameSite mode of this
+	// listener: each listener has its own, so a session of one is never
+	// valid on the other.
+	sessionName string
+	preName     string
+	sessionSite http.SameSite
+	// behindProxy is this listener's server.behind_proxy (or
+	// admin_behind_proxy); trusted holds its trusted proxies.
+	behindProxy bool
+	// host, when set, is the only Host this listener answers for.
+	host string
 }
+
+// surface is a set of route groups.
+type surface uint8
+
+const (
+	// surfacePublic: sign-in, consent, OIDC and SAML.
+	surfacePublic surface = 1 << iota
+	// surfaceAdmin: the admin pages and the sign-in pages they need.
+	surfaceAdmin
+)
 
 // New builds the server and its routes.
 func New(o Options) (*Server, error) {
@@ -108,13 +140,10 @@ func New(o Options) (*Server, error) {
 		return nil, err
 	}
 	s.cat = cat
-	for _, p := range s.cfg.Server.TrustedProxies {
-		pr, err := netip.ParsePrefix(p)
-		if err != nil {
-			return nil, err
-		}
-		s.trusted = append(s.trusted, pr)
+	if s.trusted, err = parsePrefixes(s.cfg.Server.TrustedProxies); err != nil {
+		return nil, err
 	}
+	s.behindProxy = s.cfg.Server.BehindProxy
 	for _, g := range s.cfg.Roles.AdminGroups {
 		v, err := sid.Parse(g)
 		if err != nil {
@@ -126,11 +155,27 @@ func New(o Options) (*Server, error) {
 		return nil, err
 	}
 	s.sess = newSessions(s.cfg.IdleTimeout(), s.cfg.AbsoluteTimeout(), now)
+	s.sessionName, s.preName, s.sessionSite = sessionCookie, preCookie, http.SameSiteLaxMode
+	s.rt = &atomic.Pointer[runtimeSettings]{}
 	s.ipLimit = ratelimit.NewBucket(s.cfg.RateLimit.PerIPPerMinute, time.Minute)
 	s.tokenLimit = ratelimit.NewBucket(s.cfg.RateLimit.TokenPerIPPerMinute, time.Minute)
 	s.accountFails = ratelimit.NewFailures(s.cfg.RateLimit.AccountFailures, time.Duration(s.cfg.RateLimit.AccountWindowMinutes)*time.Minute)
 	s.endSessions = newEndSessionTickets(now)
 	s.logouts = newLogoutChains(now)
+	s.allSessions = []*sessions{s.sess}
+	switch s.cfg.AdminMode() {
+	case config.AdminShared:
+		s.surface = surfacePublic | surfaceAdmin
+	case config.AdminDisabled:
+		s.surface = surfacePublic
+	case config.AdminSeparate:
+		s.surface = surfacePublic
+		if s.admin, err = s.adminServer(); err != nil {
+			return nil, err
+		}
+		s.allSessions = append(s.allSessions, s.admin.sess)
+		s.admin.allSessions = s.allSessions
+	}
 	s.ApplySettings(settings.Defaults(s.cfg))
 	if s.oidc != nil {
 		s.oidc.EndSessionURL = s.endSessionURL
@@ -140,12 +185,64 @@ func New(o Options) (*Server, error) {
 	return s, nil
 }
 
+// adminServer builds the admin listener's handler: the same server with
+// its own routes, session table, cookie names and proxy settings.
+func (s *Server) adminServer() (*Server, error) {
+	a := *s
+	a.surface = surfaceAdmin
+	a.admin = nil
+	a.sess = newSessions(s.cfg.IdleTimeout(), s.cfg.AbsoluteTimeout(), s.now)
+	// The admin listener never receives cross-site redirects from relying
+	// parties, so its session cookie can be Strict.
+	a.sessionName, a.preName, a.sessionSite = adminSessionCookie, adminPreCookie, http.SameSiteStrictMode
+	a.behindProxy = s.cfg.Server.AdminBehindProxy
+	var err error
+	if a.trusted, err = parsePrefixes(s.cfg.Server.AdminTrustedProxies); err != nil {
+		return nil, err
+	}
+	a.host = s.cfg.AdminHost()
+	a.mux = http.NewServeMux()
+	a.routes()
+	return &a, nil
+}
+
+func parsePrefixes(list []string) ([]netip.Prefix, error) {
+	var out []netip.Prefix
+	for _, p := range list {
+		pr, err := netip.ParsePrefix(p)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, pr)
+	}
+	return out, nil
+}
+
 // ServeHTTP implements http.Handler.
-func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) { s.mux.ServeHTTP(w, r) }
+func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if s.host != "" && config.CanonicalHost(r.Host) != s.host {
+		// Only the configured admin host name (server.admin_url): no DNS
+		// rebinding, and the session cookie stays on one origin.
+		http.Error(w, "misdirected request", http.StatusMisdirectedRequest)
+		return
+	}
+	s.mux.ServeHTTP(w, r)
+}
+
+// AdminHandler returns the admin listener's handler when the admin pages
+// have a listener of their own (server.admin_listen), else nil.
+func (s *Server) AdminHandler() http.Handler {
+	if s.admin == nil {
+		return nil
+	}
+	return s.admin
+}
 
 // Sweep drops expired sessions and tickets (called periodically).
 func (s *Server) Sweep() {
-	s.sess.sweep()
+	for _, t := range s.allSessions {
+		t.sweep()
+	}
 	s.endSessions.sweep()
 	s.logouts.sweep()
 }

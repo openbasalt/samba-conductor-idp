@@ -23,6 +23,12 @@ const (
 	sessionCookie = "__Host-idp-session"
 	// preCookie carries the CSRF token of the sign-in form (double submit).
 	preCookie = "__Host-idp-pre"
+	// adminSessionCookie and adminPreCookie replace them on a separate
+	// admin listener (server.admin_listen): browsers do not isolate
+	// cookies by port, so distinct names (and a separate session table)
+	// keep a session of one listener from being presented to the other.
+	adminSessionCookie = "__Host-idp-admin-session"
+	adminPreCookie     = "__Host-idp-admin-pre"
 	// browserCookie identifies the browser an authorization request or a
 	// SAML request was continued in; codes are only released to it.
 	browserCookie = "__Host-idp-browser"
@@ -305,6 +311,14 @@ func (t *sessions) evictLocked(now time.Time) {
 func setCookie(w http.ResponseWriter, name, value string, maxAge int, sameSite http.SameSite) {
 	http.SetCookie(w, &http.Cookie{Name: name, Value: value, Path: "/", MaxAge: maxAge, Secure: true, HttpOnly: true, SameSite: sameSite})
 }
+
+// setSessionCookie writes this listener's session cookie.
+func (s *Server) setSessionCookie(w http.ResponseWriter, tok string) {
+	setCookie(w, s.sessionName, tok, 0, s.sessionSite)
+}
+
+// clearSessionCookie removes this listener's session cookie.
+func (s *Server) clearSessionCookie(w http.ResponseWriter) { clearCookie(w, s.sessionName) }
 
 func clearCookie(w http.ResponseWriter, name string) {
 	http.SetCookie(w, &http.Cookie{Name: name, Value: "", Path: "/", MaxAge: -1, Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode})

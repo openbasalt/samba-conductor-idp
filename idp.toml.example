@@ -15,6 +15,26 @@ tls_key = "/etc/conductor-idp/tls/key.pem"
 # behind_proxy = true
 # trusted_proxies = ["127.0.0.1/32", "::1/128"]
 
+# Admin pages (/admin). Unset: served on the listener above, as before.
+# For an IdP reachable from the internet, give them a listener of their own
+# on an internal or VPN address; the listener above then answers 404 for
+# every admin path and accepts no administrator enrollment link.
+# admin_listen = "10.0.0.5:9444"
+# "off": no admin pages at all (manage clients with the CLI or conductor).
+# admin_listen = "off"
+# Its certificate (default: tls_cert and tls_key above).
+# admin_tls_cert = "/etc/conductor-idp/tls/admin-cert.pem"
+# admin_tls_key = "/etc/conductor-idp/tls/admin-key.pem"
+# Its external base URL, used in enrollment links. When set, the admin
+# listener answers only for this host name. Default: the issuer's host
+# name with admin_listen's port.
+# admin_url = "https://idp-admin.example.com:9444"
+# Or behind a TLS reverse proxy on the same host (loopback only;
+# admin_url is then required):
+# admin_listen = "127.0.0.1:9081"
+# admin_behind_proxy = true
+# admin_trusted_proxies = ["127.0.0.1/32", "::1/128"]
+
 [domain]
 realm = "EXAMPLE.COM"
 # The CA that signs the DCs' LDAPS certificates; nothing else is trusted.

@@ -534,7 +534,7 @@ func (s *Server) handleAdminEnrollLink(rc *reqCtx) {
 		return
 	}
 	s.audit(rc.ctx(), rc, "admin.enroll_link", u.SAM, "valid 24 h", store.ResultOK)
-	link := s.cfg.Issuer() + "/login?enroll=" + url.QueryEscape(tok)
+	link := s.cfg.EnrollURL() + "/login?enroll=" + url.QueryEscape(tok)
 	rc.render(http.StatusOK, "admin_users", s.adminData(rc, "users", map[string]any{"Local": true, "Link": link, "LinkUser": u.SAM}))
 }
 

@@ -17,7 +17,9 @@ type runtimeSettings struct {
 // ApplySettings makes new settings effective: session lifetimes (for new
 // and running sessions), the local 2FA policy and the consent note.
 func (s *Server) ApplySettings(st idpapi.Settings) {
-	s.sess.setTimeouts(time.Duration(st.SessionIdleMinutes)*time.Minute, time.Duration(st.SessionAbsoluteHours)*time.Hour)
+	for _, t := range s.allSessions {
+		t.setTimeouts(time.Duration(st.SessionIdleMinutes)*time.Minute, time.Duration(st.SessionAbsoluteHours)*time.Hour)
+	}
 	s.rt.Store(&runtimeSettings{mfaPolicy: st.MFAPolicy, consent: maps.Clone(st.ConsentText)})
 }
 

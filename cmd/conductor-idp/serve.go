@@ -203,21 +203,10 @@ func cmdServe(ctx context.Context, cfgPath string, _ []string) error {
 			}
 		}()
 	}
-	hs := &http.Server{
-		Addr:              e.cfg.Server.Listen,
-		Handler:           srv,
-		ReadHeaderTimeout: 10 * time.Second,
-		ReadTimeout:       30 * time.Second,
-		WriteTimeout:      60 * time.Second,
-		IdleTimeout:       120 * time.Second,
-		MaxHeaderBytes:    32 << 10,
-		ErrorLog:          slog.NewLogLogger(log.Handler(), slog.LevelWarn),
-	}
-	if e.cfg.TLS() {
-		hs.TLSConfig = &tls.Config{MinVersion: tls.VersionTLS12}
-	}
+	hs := newHTTPServer(e.cfg.Server.Listen, srv, log, e.cfg.TLS())
+	servers := []*http.Server{hs}
 	go maintenance(ctx, log, e.store, p, srv)
-	errc := make(chan error, 1)
+	errc := make(chan error, 2)
 	go func() {
 		log.Info("conductor-idp listening", "addr", e.cfg.Server.Listen, "issuer", e.cfg.Issuer(), "saml", e.cfg.SAML.Enabled,
 			"mfa_backend", backend.Name(), "version", version)
@@ -227,17 +216,63 @@ func cmdServe(ctx context.Context, cfgPath string, _ []string) error {
 			errc <- hs.ListenAndServe()
 		}
 	}()
+	switch e.cfg.AdminMode() {
+	case config.AdminShared:
+		log.Info("the admin pages are served on the main listener; for a deployment exposed to the internet, " +
+			"set server.admin_listen to an internal address (or \"off\") so that they are not reachable from it")
+	case config.AdminDisabled:
+		log.Info("admin pages off (server.admin_listen = \"off\"): manage clients with the CLI or from conductor")
+	case config.AdminSeparate:
+		cert, key, tlsOn := e.cfg.AdminTLS()
+		as := newHTTPServer(e.cfg.Server.AdminListen, srv.AdminHandler(), log, tlsOn)
+		servers = append(servers, as)
+		go func() {
+			log.Info("admin pages listening", "addr", e.cfg.Server.AdminListen, "url", e.cfg.AdminBaseURL())
+			if tlsOn {
+				errc <- as.ListenAndServeTLS(cert, key)
+			} else {
+				errc <- as.ListenAndServe()
+			}
+		}()
+	}
+	shutdown := func() error {
+		sctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		var errs []error
+		for _, x := range servers {
+			errs = append(errs, x.Shutdown(sctx))
+		}
+		return errors.Join(errs...)
+	}
 	select {
 	case err := <-errc:
+		// One listener failing (a port in use) stops the service.
+		_ = shutdown()
 		if errors.Is(err, http.ErrServerClosed) {
 			return nil
 		}
 		return err
 	case <-ctx.Done():
-		sctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		return hs.Shutdown(sctx)
+		return shutdown()
 	}
+}
+
+// newHTTPServer builds a listener with the service's timeouts and limits.
+func newHTTPServer(addr string, h http.Handler, log *slog.Logger, tlsOn bool) *http.Server {
+	hs := &http.Server{
+		Addr:              addr,
+		Handler:           h,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      60 * time.Second,
+		IdleTimeout:       120 * time.Second,
+		MaxHeaderBytes:    32 << 10,
+		ErrorLog:          slog.NewLogLogger(log.Handler(), slog.LevelWarn),
+	}
+	if tlsOn {
+		hs.TLSConfig = &tls.Config{MinVersion: tls.VersionTLS12}
+	}
+	return hs
 }
 
 // maintenance rotates the OIDC key on schedule, purges expired rows and
@@ -275,6 +310,14 @@ func cmdCheck(ctx context.Context, cfgPath string) error {
 	}
 	defer e.close()
 	fmt.Println("configuration: ok")
+	switch e.cfg.AdminMode() {
+	case config.AdminShared:
+		fmt.Println("admin pages: on the main listener (" + e.cfg.Issuer() + "/admin)")
+	case config.AdminDisabled:
+		fmt.Println("admin pages: off")
+	case config.AdminSeparate:
+		fmt.Println("admin pages: " + e.cfg.Server.AdminListen + " (" + e.cfg.AdminBaseURL() + "/admin)")
+	}
 	if _, err := e.masterKey(); err != nil {
 		return fmt.Errorf("master key: %w", err)
 	}

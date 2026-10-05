@@ -148,7 +148,7 @@ func (rc *reqCtx) render(status int, page string, d map[string]any) {
 		pd.Flashes = rc.sess.takeFlashes()
 	}
 	if pd.CSRF == "" {
-		if c, err := rc.r.Cookie(preCookie); err == nil {
+		if c, err := rc.r.Cookie(rc.s.preName); err == nil {
 			pd.CSRF = c.Value
 		}
 	}

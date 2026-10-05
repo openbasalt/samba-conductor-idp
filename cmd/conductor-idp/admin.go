@@ -484,7 +484,7 @@ func cmdEnrollLink(ctx context.Context, cfgPath string, args []string) error {
 		return err
 	}
 	e.audit(ctx, "admin.enroll_link", sam, "valid 24 h")
-	fmt.Println(e.cfg.Issuer() + "/login?enroll=" + tok)
+	fmt.Println(e.cfg.EnrollURL() + "/login?enroll=" + tok)
 	return nil
 }
 

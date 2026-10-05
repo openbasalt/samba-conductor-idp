@@ -176,15 +176,17 @@ func (d *fakeDir) set(sam string, f func(u *fakeUser)) {
 // ---- harness ----
 
 type harness struct {
-	t     *testing.T
-	ts    *httptest.Server
-	srv   *Server
-	store *store.Store
-	dir   *fakeDir
-	local *mfa.Local
-	oidc  *oidcp.KeyManager
-	saml  *samlidp.IdP
-	clock *fakeClock
+	t  *testing.T
+	ts *httptest.Server
+	// adminTS is the separate admin listener (harnessOpts.admin "split").
+	adminTS *httptest.Server
+	srv     *Server
+	store   *store.Store
+	dir     *fakeDir
+	local   *mfa.Local
+	oidc    *oidcp.KeyManager
+	saml    *samlidp.IdP
+	clock   *fakeClock
 }
 
 type fakeClock struct {
@@ -207,6 +209,9 @@ func (c *fakeClock) Advance(d time.Duration) {
 type harnessOpts struct {
 	policy  string
 	backend mfa.Backend
+	// admin: "" (admin pages on the main listener), "split" (a separate
+	// admin listener, h.adminTS) or "off".
+	admin string
 }
 
 func newHarness(t *testing.T, o harnessOpts) *harness {
@@ -217,6 +222,12 @@ func newHarness(t *testing.T, o harnessOpts) *harness {
 	h.ts = httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { handler.ServeHTTP(w, r) }))
 	h.ts.StartTLS()
 	t.Cleanup(h.ts.Close)
+	var adminHandler http.Handler = http.NotFoundHandler()
+	if o.admin == "split" {
+		h.adminTS = httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { adminHandler.ServeHTTP(w, r) }))
+		h.adminTS.StartTLS()
+		t.Cleanup(h.adminTS.Close)
+	}
 
 	st, err := store.Open(ctx, ":memory:")
 	if err != nil {
@@ -233,6 +244,13 @@ func newHarness(t *testing.T, o harnessOpts) *harness {
 	cfg.SAML.Enabled = true
 	if o.policy != "" {
 		cfg.MFA.Policy = o.policy
+	}
+	switch o.admin {
+	case "split":
+		cfg.Server.AdminListen = "127.0.0.1:9444"
+		cfg.Server.AdminURL = h.adminTS.URL
+	case "off":
+		cfg.Server.AdminListen = config.AdminOff
 	}
 	if err := cfg.Validate(); err != nil {
 		t.Fatal(err)
@@ -270,6 +288,9 @@ func newHarness(t *testing.T, o harnessOpts) *harness {
 		t.Fatal(err)
 	}
 	handler = h.srv
+	if a := h.srv.AdminHandler(); a != nil {
+		adminHandler = a
+	}
 	return h
 }
 
@@ -286,22 +307,29 @@ func (r testRotator) RotateSAML(ctx context.Context, immediate bool) (string, er
 // browser is a cookie-keeping client that does not follow redirects off
 // the idp (the relying party's redirect URI is not reachable).
 type browser struct {
-	h    *harness
+	h *harness
+	// base is the listener this browser talks to.
+	base string
 	c    *http.Client
 	last *http.Response
 	body string
 }
 
-func (h *harness) browser() *browser {
-	jar, _ := cookiejar.New(nil)
-	c := h.ts.Client()
-	c = &http.Client{Transport: c.Transport, Jar: jar, CheckRedirect: func(req *http.Request, via []*http.Request) error {
-		if req.URL.Host != strings.TrimPrefix(h.ts.URL, "https://") {
+func (h *harness) browser() *browser { return h.browserOn(h.ts, nil) }
+
+// browserOn is a browser for one listener; browsers given the same jar
+// share cookies as a real browser does (cookies are not isolated by port).
+func (h *harness) browserOn(ts *httptest.Server, jar http.CookieJar) *browser {
+	if jar == nil {
+		jar, _ = cookiejar.New(nil)
+	}
+	c := &http.Client{Transport: ts.Client().Transport, Jar: jar, CheckRedirect: func(req *http.Request, via []*http.Request) error {
+		if req.URL.Host != strings.TrimPrefix(ts.URL, "https://") {
 			return http.ErrUseLastResponse
 		}
 		return nil
 	}}
-	return &browser{h: h, c: c}
+	return &browser{h: h, base: ts.URL, c: c}
 }
 
 func (b *browser) do(req *http.Request) *http.Response {
@@ -320,7 +348,7 @@ func (b *browser) get(path string) *http.Response {
 	b.h.t.Helper()
 	u := path
 	if strings.HasPrefix(path, "/") {
-		u = b.h.ts.URL + path
+		u = b.base + path
 	}
 	req, _ := http.NewRequest(http.MethodGet, u, nil)
 	return b.do(req)
@@ -328,7 +356,7 @@ func (b *browser) get(path string) *http.Response {
 
 func (b *browser) post(path string, form url.Values) *http.Response {
 	b.h.t.Helper()
-	req, _ := http.NewRequest(http.MethodPost, b.h.ts.URL+path, strings.NewReader(form.Encode()))
+	req, _ := http.NewRequest(http.MethodPost, b.base+path, strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	return b.do(req)
 }

@@ -101,7 +101,7 @@ func (s *Server) startOIDC(rc *reqCtx, c cont) bool {
 	if rc.sess != nil && !full {
 		// A half-finished sign-in of another flow: start over.
 		s.sess.destroy(rc.sess)
-		clearCookie(rc.w, sessionCookie)
+		s.clearSessionCookie(rc.w)
 		rc.sess = nil
 	}
 	username := ""
@@ -360,7 +360,7 @@ func (s *Server) endBrowserSession(rc *reqCtx, detail string) {
 		s.sess.destroy(rc.sess)
 		rc.sess = nil
 	}
-	clearCookie(rc.w, sessionCookie)
+	s.clearSessionCookie(rc.w)
 }
 
 // leaveTo redirects to a post-logout URI the provider validated, or to
@@ -423,7 +423,7 @@ func (s *Server) startSAML(rc *reqCtx, c cont) bool {
 	}
 	if rc.sess != nil {
 		s.sess.destroy(rc.sess)
-		clearCookie(rc.w, sessionCookie)
+		s.clearSessionCookie(rc.w)
 		rc.sess = nil
 	}
 	return false
@@ -544,6 +544,10 @@ func (s *Server) handleSAMLMetadata(w http.ResponseWriter, r *http.Request) {
 // ---- home ----
 
 func (s *Server) handleHome(rc *reqCtx) {
+	if s.adminOnly() {
+		rc.redirect("/admin")
+		return
+	}
 	ctx := rc.ctx()
 	u, err := s.sessionUser(ctx, rc.sess)
 	if err != nil {
@@ -568,5 +572,5 @@ func (s *Server) handleHome(rc *reqCtx) {
 	verified := rc.sess.mfaVerified
 	rc.sess.mu.Unlock()
 	rc.render(http.StatusOK, "home", map[string]any{"Apps": apps, "Enrolled": enrolled, "CanEnroll": s.local != nil && !enrolled,
-		"Admin": admin && verified, "UserName": u.Name(), "SAM": u.SAM, "Mail": u.Mail})
+		"Admin": admin && verified && s.surface&surfaceAdmin != 0, "UserName": u.Name(), "SAM": u.SAM, "Mail": u.Mail})
 }

@@ -64,6 +64,10 @@ func (c cont) with(path string) string {
 }
 
 func (rc *reqCtx) cont() cont {
+	if rc.s.adminOnly() {
+		// The admin listener continues no OIDC or SAML flow.
+		return cont{}
+	}
 	if v := rc.r.URL.Query().Get("c"); v != "" {
 		return parseCont(v)
 	}
@@ -86,12 +90,12 @@ func (rc *reqCtx) flashOK(key string, args ...any) {
 
 // ensurePreCookie sets the pre-session CSRF cookie of the sign-in form.
 func (rc *reqCtx) ensurePreCookie() string {
-	if c, err := rc.r.Cookie(preCookie); err == nil && len(c.Value) >= 32 && len(c.Value) <= 64 {
+	if c, err := rc.r.Cookie(rc.s.preName); err == nil && len(c.Value) >= 32 && len(c.Value) <= 64 {
 		return c.Value
 	}
 	tok := newToken()
-	setCookie(rc.w, preCookie, tok, 3600, http.SameSiteStrictMode)
-	rc.r.AddCookie(&http.Cookie{Name: preCookie, Value: tok})
+	setCookie(rc.w, rc.s.preName, tok, 3600, http.SameSiteStrictMode)
+	rc.r.AddCookie(&http.Cookie{Name: rc.s.preName, Value: tok})
 	return tok
 }
 
@@ -131,6 +135,22 @@ func cleanLinkToken(t string) string {
 	return t
 }
 
+// adminOnly reports whether this is the separate admin listener.
+func (s *Server) adminOnly() bool { return s.surface == surfaceAdmin }
+
+// enrollToken returns a well-formed enrollment link token when this
+// listener accepts administrator enrollment links, else "". With a
+// separate admin listener only that listener accepts them, so an
+// administrator's second factor is set up on the internal origin only;
+// with the admin pages off the public listener still does (there is no
+// other place to enroll).
+func (s *Server) enrollToken(t string) string {
+	if s.surface&surfaceAdmin == 0 && s.cfg.AdminMode() != config.AdminDisabled {
+		return ""
+	}
+	return cleanLinkToken(t)
+}
+
 // LinkHash is the stored form of an enrollment link token.
 func LinkHash(tok string) string {
 	h := sha256.Sum256([]byte("idp-enroll\x00" + tok))
@@ -163,7 +183,7 @@ func (s *Server) userIsAdmin(ctx context.Context, groups []sid.SID, active bool)
 func (s *Server) handleLoginPage(rc *reqCtx) {
 	q := rc.r.URL.Query()
 	c := rc.cont()
-	if ar := q.Get("ar"); ar != "" {
+	if ar := q.Get("ar"); ar != "" && !s.adminOnly() {
 		c = parseCont("o." + ar)
 		if c.kind == 0 {
 			rc.errorPage(http.StatusBadRequest, "err.flow")
@@ -200,7 +220,7 @@ func (s *Server) handleLoginPage(rc *reqCtx) {
 // showLogin renders the sign-in form.
 func (s *Server) showLogin(rc *reqCtx, c cont, username string, status int) {
 	rc.ensurePreCookie()
-	d := map[string]any{"C": c.String(), "Username": username, "Enroll": cleanLinkToken(rc.r.URL.Query().Get("enroll"))}
+	d := map[string]any{"C": c.String(), "Username": username, "Enroll": s.enrollToken(rc.r.URL.Query().Get("enroll"))}
 	if k, ok := loginMessages[rc.r.URL.Query().Get("m")]; ok {
 		d["Notice"] = rc.T(k)
 	}
@@ -259,7 +279,7 @@ func (s *Server) handleLogin(rc *reqCtx) {
 	c := rc.cont()
 	typed := rc.form("username")
 	password := rc.rawForm("password")
-	enroll := cleanLinkToken(rc.form("enroll"))
+	enroll := s.enrollToken(rc.form("enroll"))
 	rc.actorHint = clipName(typed)
 	if !s.ipLimit.Allow("login:" + rc.ip) {
 		s.audit(ctx, rc, "signin.rate_limited", rc.ip, "per-address limit", store.ResultDenied)
@@ -293,6 +313,12 @@ func (s *Server) handleLogin(rc *reqCtx) {
 	if err != nil {
 		s.log.Error("admin check failed", "err", err)
 		s.loginError(rc, c, http.StatusBadGateway, "err.directory", typed, enroll)
+		return
+	}
+	if !admin && s.adminOnly() {
+		// The admin listener signs in administrators only.
+		s.audit(ctx, rc, "signin.failure", sam, "not an administrator (admin listener)", store.ResultDenied)
+		s.loginError(rc, c, http.StatusForbidden, "signin.err.admin_only", typed, "")
 		return
 	}
 	st, err := s.mfa.State(ctx, u)
@@ -342,8 +368,8 @@ func (s *Server) handleLogin(rc *reqCtx) {
 		sess.stage = stageFull
 	}
 	tok := s.sess.create(sess)
-	setCookie(rc.w, sessionCookie, tok, 0, http.SameSiteLaxMode)
-	clearCookie(rc.w, preCookie)
+	s.setSessionCookie(rc.w, tok)
+	clearCookie(rc.w, s.preName)
 	rc.sess = sess
 	s.audit(ctx, rc, "signin.password", sam, "next="+sess.stage.String()+" admin="+boolStr(admin)+" flow="+c.String(), store.ResultOK)
 	switch sess.stage {
@@ -400,8 +426,8 @@ func (s *Server) loginFailed(rc *reqCtx, ctx context.Context, c cont, sam, typed
 		}
 		sess := &Session{sam: sam, stage: stageMustChange, ip: rc.ip, userAgent: rc.r.UserAgent()}
 		tok := s.sess.create(sess)
-		setCookie(rc.w, sessionCookie, tok, 0, http.SameSiteLaxMode)
-		clearCookie(rc.w, preCookie)
+		s.setSessionCookie(rc.w, tok)
+		clearCookie(rc.w, s.preName)
 		rc.sess = sess
 		s.audit(ctx, rc, "signin.password_change_required", sam, detail, store.ResultPending)
 		rc.redirect(c.with("/login/password"))
@@ -476,7 +502,7 @@ func (s *Server) handlePassword(rc *reqCtx) {
 	s.accountFails.Reset(sam)
 	s.audit(ctx, rc, "password.change_expired", sam, "kpasswd (old password verified)", store.ResultOK)
 	s.sess.destroy(rc.sess)
-	clearCookie(rc.w, sessionCookie)
+	s.clearSessionCookie(rc.w)
 	rc.redirect(c.with("/login?m=password_changed"))
 }
 
@@ -572,7 +598,7 @@ func (s *Server) handleMFAKey(rc *reqCtx) {
 	u, err := s.sessionUser(ctx, sess)
 	if err != nil || !u.Active() {
 		s.sess.destroy(sess)
-		clearCookie(rc.w, sessionCookie)
+		s.clearSessionCookie(rc.w)
 		rc.redirect(c.with("/login"))
 		return
 	}
@@ -600,7 +626,7 @@ func (s *Server) mfaRefused(rc *reqCtx, c cont, sam, what string) {
 	s.audit(rc.ctx(), rc, "mfa.failure", sam, what, store.ResultDenied)
 	if n >= maxMFAFailures {
 		s.sess.destroy(sess)
-		clearCookie(rc.w, sessionCookie)
+		s.clearSessionCookie(rc.w)
 		rc.redirect(c.with("/login"))
 		return
 	}
@@ -619,7 +645,7 @@ func (s *Server) mfaPassed(rc *reqCtx, c cont, sam, detail string) {
 	sess.mfaFailures = 0
 	sess.mu.Unlock()
 	tok := s.sess.rotate(sess, stageFull)
-	setCookie(rc.w, sessionCookie, tok, 0, http.SameSiteLaxMode)
+	s.setSessionCookie(rc.w, tok)
 	s.audit(rc.ctx(), rc, "mfa.verify", sam, detail, store.ResultOK)
 	s.finish(rc, c)
 }
@@ -648,7 +674,7 @@ func (s *Server) handleMFA(rc *reqCtx) {
 	u, err := s.sessionUser(ctx, sess)
 	if err != nil || !u.Active() {
 		s.sess.destroy(sess)
-		clearCookie(rc.w, sessionCookie)
+		s.clearSessionCookie(rc.w)
 		rc.redirect(c.with("/login"))
 		return
 	}
@@ -795,7 +821,7 @@ func (s *Server) handleEnroll(rc *reqCtx) {
 		if ok, err := s.store.UseEnrollLink(ctx, link, u.SAM); err != nil || !ok {
 			s.audit(ctx, rc, "mfa.enroll", u.SAM, "enrollment link no longer valid", store.ResultDenied)
 			s.sess.destroy(sess)
-			clearCookie(rc.w, sessionCookie)
+			s.clearSessionCookie(rc.w)
 			rc.redirect(c.with("/login"))
 			return
 		}
@@ -816,7 +842,7 @@ func (s *Server) handleEnroll(rc *reqCtx) {
 	sess.recoveryCodes = codes
 	sess.mu.Unlock()
 	tok := s.sess.rotate(sess, stageFull)
-	setCookie(rc.w, sessionCookie, tok, 0, http.SameSiteLaxMode)
+	s.setSessionCookie(rc.w, tok)
 	s.audit(ctx, rc, "mfa.enroll", u.SAM, "totp + recovery codes (local)", store.ResultOK)
 	rc.redirect(c.with("/login/recovery-codes"))
 }

@@ -89,6 +89,101 @@ type Server struct {
 	BehindProxy bool `toml:"behind_proxy"`
 	// TrustedProxies whose X-Forwarded-For is believed (CIDRs).
 	TrustedProxies []string `toml:"trusted_proxies"`
+
+	// AdminListen moves the admin pages off the main listener: empty
+	// serves them on the main listener (the behaviour before this
+	// setting), "off" serves them nowhere (clients are then managed with
+	// the CLI and conductor's management API), and an address serves them
+	// on a second listener of their own, meant for an internal network or
+	// a VPN, so that the main listener can face the internet.
+	AdminListen string `toml:"admin_listen"`
+	// AdminTLSCert and AdminTLSKey are the admin listener's certificate;
+	// when unset it uses tls_cert and tls_key.
+	AdminTLSCert string `toml:"admin_tls_cert"`
+	AdminTLSKey  string `toml:"admin_tls_key"`
+	// AdminURL is the external base URL of the admin listener
+	// ("https://idp-admin.example.com"), used for links that leave the
+	// admin pages (enrollment links). When set, the admin listener refuses
+	// requests for any other host name. Default: the issuer's host name
+	// with the admin listener's port.
+	AdminURL string `toml:"admin_url"`
+	// AdminBehindProxy and AdminTrustedProxies mirror behind_proxy and
+	// trusted_proxies for the admin listener.
+	AdminBehindProxy    bool     `toml:"admin_behind_proxy"`
+	AdminTrustedProxies []string `toml:"admin_trusted_proxies"`
+}
+
+// AdminOff is the server.admin_listen value that disables the admin pages.
+const AdminOff = "off"
+
+// AdminMode says where the admin pages are served.
+type AdminMode int
+
+const (
+	// AdminShared: on the main listener (server.admin_listen unset).
+	AdminShared AdminMode = iota
+	// AdminSeparate: on their own listener (server.admin_listen = address).
+	AdminSeparate
+	// AdminDisabled: nowhere (server.admin_listen = "off").
+	AdminDisabled
+)
+
+// AdminMode returns where the admin pages are served.
+func (c *Config) AdminMode() AdminMode {
+	switch c.Server.AdminListen {
+	case "":
+		return AdminShared
+	case AdminOff:
+		return AdminDisabled
+	}
+	return AdminSeparate
+}
+
+// AdminTLS reports whether the admin listener serves TLS itself, and with
+// which certificate and key (its own, or the main listener's).
+func (c *Config) AdminTLS() (cert, key string, ok bool) {
+	if c.AdminMode() != AdminSeparate || c.Server.AdminBehindProxy {
+		return "", "", false
+	}
+	if c.Server.AdminTLSCert != "" {
+		return c.Server.AdminTLSCert, c.Server.AdminTLSKey, true
+	}
+	return c.Server.TLSCert, c.Server.TLSKey, c.Server.TLSCert != ""
+}
+
+// AdminBaseURL is the external base URL of the admin pages: admin_url,
+// or else the issuer's host name with the admin listener's port. With the
+// admin pages on the main listener it is the issuer; with them off, "".
+func (c *Config) AdminBaseURL() string {
+	switch c.AdminMode() {
+	case AdminShared:
+		return c.Issuer()
+	case AdminDisabled:
+		return ""
+	}
+	if c.Server.AdminURL != "" {
+		return strings.TrimRight(c.Server.AdminURL, "/")
+	}
+	u, err := url.Parse(c.Issuer())
+	if err != nil {
+		return ""
+	}
+	_, port, err := net.SplitHostPort(c.Server.AdminListen)
+	if err != nil {
+		return ""
+	}
+	return "https://" + net.JoinHostPort(u.Hostname(), port)
+}
+
+// EnrollURL is the base URL of administrator enrollment links: the admin
+// listener when it is separate (an administrator's second factor is set
+// up on the internal origin only), the issuer otherwise (with the admin
+// pages off there is no other place to enroll).
+func (c *Config) EnrollURL() string {
+	if c.AdminMode() == AdminSeparate {
+		return c.AdminBaseURL()
+	}
+	return c.Issuer()
 }
 
 // Domain is how the AD domain is reached.
@@ -269,6 +364,7 @@ func (c *Config) Validate() error {
 	if len(c.Server.TrustedProxies) > 0 && !c.Server.BehindProxy {
 		bad("server.trusted_proxies only makes sense with server.behind_proxy")
 	}
+	errs = append(errs, c.validateAdmin()...)
 
 	if c.Domain.Realm == "" || strings.ContainsAny(c.Domain.Realm, " /\\") {
 		bad("domain.realm is required")
@@ -366,6 +462,68 @@ func (c *Config) Validate() error {
 	return errors.Join(errs...)
 }
 
+// validateAdmin checks the admin listener settings (server.admin_*),
+// with the same TLS and proxy rules as the main listener.
+func (c *Config) validateAdmin() []error {
+	var errs []error
+	bad := func(format string, a ...any) { errs = append(errs, fmt.Errorf("config: "+format, a...)) }
+	s := c.Server
+	if c.AdminMode() != AdminSeparate {
+		// The other admin_* keys only describe a separate listener.
+		if s.AdminTLSCert != "" || s.AdminTLSKey != "" || s.AdminURL != "" || s.AdminBehindProxy || len(s.AdminTrustedProxies) > 0 {
+			bad("server.admin_tls_cert, admin_tls_key, admin_url, admin_behind_proxy and admin_trusted_proxies need server.admin_listen set to an address")
+		}
+		return errs
+	}
+	host, port, err := net.SplitHostPort(s.AdminListen)
+	if err != nil {
+		bad("server.admin_listen must be \"off\" or an address such as \"10.0.0.5:9444\" (got %q): %v", s.AdminListen, err)
+		return errs
+	}
+	if mainHost, mainPort, err := net.SplitHostPort(s.Listen); err == nil && mainPort == port &&
+		(mainHost == host || mainHost == "" || host == "" || mainHost == "0.0.0.0" || host == "0.0.0.0" || mainHost == "::" || host == "::") {
+		bad("server.admin_listen %q overlaps server.listen %q: use another port or address", s.AdminListen, s.Listen)
+	}
+	ownTLS := s.AdminTLSCert != "" || s.AdminTLSKey != ""
+	switch {
+	case ownTLS && (s.AdminTLSCert == "" || s.AdminTLSKey == ""):
+		bad("server.admin_tls_cert and server.admin_tls_key go together")
+	case ownTLS && s.AdminBehindProxy:
+		bad("server.admin_behind_proxy and server.admin_tls_cert/admin_tls_key are exclusive")
+	case s.AdminBehindProxy && !isLoopback(host):
+		bad("server.admin_behind_proxy requires a loopback server.admin_listen address (got %q)", s.AdminListen)
+	case !ownTLS && !s.AdminBehindProxy && s.TLSCert == "":
+		bad("the admin listener needs TLS: set server.admin_tls_cert/admin_tls_key (the main listener is behind a proxy and has no certificate), or server.admin_behind_proxy with a loopback server.admin_listen address")
+	}
+	for _, p := range s.AdminTrustedProxies {
+		if _, err := netip.ParsePrefix(p); err != nil {
+			bad("server.admin_trusted_proxies %q: %v", p, err)
+		}
+	}
+	if len(s.AdminTrustedProxies) > 0 && !s.AdminBehindProxy {
+		bad("server.admin_trusted_proxies only makes sense with server.admin_behind_proxy")
+	}
+	if s.AdminURL != "" {
+		u, err := url.Parse(s.AdminURL)
+		if err != nil || u.Scheme != "https" || u.Host == "" || (u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.Fragment != "" || u.User != nil {
+			bad("server.admin_url must be https://host[:port] without a path (got %q)", s.AdminURL)
+		} else if iu, err := url.Parse(c.Issuer()); err == nil && strings.EqualFold(canonicalHost(u), canonicalHost(iu)) {
+			bad("server.admin_url must be another origin than server.issuer (a different host name or port)")
+		}
+	} else if s.AdminBehindProxy {
+		bad("server.admin_url is required with server.admin_behind_proxy (the proxy's external URL of the admin pages)")
+	}
+	return errs
+}
+
+// canonicalHost is host:port of an https URL, with the default port.
+func canonicalHost(u *url.URL) string {
+	if u.Port() == "" {
+		return net.JoinHostPort(u.Hostname(), "443")
+	}
+	return u.Host
+}
+
 func isLoopback(host string) bool {
 	if host == "localhost" {
 		return true
@@ -394,6 +552,26 @@ func (c *Config) IssuerHost() string {
 		return ""
 	}
 	return u.Host
+}
+
+// AdminHost returns the host:port (port 443 spelled out) the admin
+// listener answers for when server.admin_url is set (requests for other
+// names are refused), or "".
+func (c *Config) AdminHost() string {
+	if c.AdminMode() != AdminSeparate || c.Server.AdminURL == "" {
+		return ""
+	}
+	u, err := url.Parse(c.Server.AdminURL)
+	if err != nil {
+		return ""
+	}
+	return strings.ToLower(canonicalHost(u))
+}
+
+// CanonicalHost returns a request Host as host:port, with the https
+// default port when it has none (to compare with AdminHost).
+func CanonicalHost(host string) string {
+	return strings.ToLower(canonicalHost(&url.URL{Host: host}))
 }
 
 // TLS reports whether the built-in TLS listener is used.

@@ -44,6 +44,18 @@ type route struct {
 	// script allows the self-hosted WebAuthn script on this page (CSP
 	// nonce). Only the second-factor page sets it.
 	script bool
+	// on is where the route is served: the public pages (zero value), the
+	// admin pages, or both (the sign-in pages an administrator needs).
+	on surface
+}
+
+// servedOn reports whether the route belongs to a listener's surface.
+func (rt route) servedOn(s surface) bool {
+	on := rt.on
+	if on == 0 {
+		on = surfacePublic
+	}
+	return on&s != 0
 }
 
 // reqCtx carries one request through a handler.
@@ -129,7 +141,7 @@ func (s *Server) clientIP(r *http.Request) string {
 		return host
 	}
 	peer = peer.Unmap()
-	if !s.cfg.Server.BehindProxy || !s.isTrusted(peer) {
+	if !s.behindProxy || !s.isTrusted(peer) {
 		return peer.String()
 	}
 	parts := strings.Split(r.Header.Get("X-Forwarded-For"), ",")
@@ -171,7 +183,7 @@ func (s *Server) wrap(rt route) http.Handler {
 		}
 		rc.r = r.WithContext(context.WithValue(context.WithValue(r.Context(), requestKey{}, r), ipKey{}, rc.ip))
 		s.prefs(rc)
-		if c, err := r.Cookie(sessionCookie); err == nil {
+		if c, err := r.Cookie(s.sessionName); err == nil {
 			rc.sess = s.sess.get(c.Value)
 		}
 		defer func() {
@@ -246,7 +258,7 @@ func (s *Server) checkCSRF(rc *reqCtx) bool {
 		}
 	}
 	if rc.route.perm == PermPublic {
-		if c, err := r.Cookie(preCookie); err == nil && tokensEqual(tok, c.Value) {
+		if c, err := r.Cookie(s.preName); err == nil && tokensEqual(tok, c.Value) {
 			return true
 		}
 	}
@@ -289,7 +301,7 @@ func (s *Server) guard(rc *reqCtx) bool {
 			// Administrators always need 2FA in this session.
 			s.audit(rc.ctx(), rc, "access.denied", rc.r.Method+" "+rc.r.URL.Path, "admin without 2FA in this session", "denied")
 			s.sess.destroy(rc.sess)
-			clearCookie(rc.w, sessionCookie)
+			s.clearSessionCookie(rc.w)
 			rc.redirect("/login?m=mfa_required")
 			return false
 		}
