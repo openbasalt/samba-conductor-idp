@@ -5,6 +5,10 @@
 //
 //	EXAMPLE_RP_SECRET=... example-rp -issuer https://idp.example.com \
 //	    -client-id cidp_... -ca /path/ca.pem -listen 127.0.0.1:5556
+//
+// -credentials FILE reads client_id= and client_secret= lines instead;
+// -tls-cert and -tls-key serve https (a non-loopback redirect URI must be
+// https).
 package main
 
 import (
@@ -41,8 +45,26 @@ func main() {
 	redirect := flag.String("redirect", "http://localhost:5556/callback", "redirect URI (registered)")
 	caFile := flag.String("ca", "", "CA file that signs the idp's certificate")
 	scopes := flag.String("scopes", "openid profile email groups offline_access", "scopes")
+	credFile := flag.String("credentials", "", "file with client_id= and client_secret= lines")
+	tlsCert := flag.String("tls-cert", "", "TLS certificate (serve https)")
+	tlsKey := flag.String("tls-key", "", "TLS key")
 	flag.Parse()
 	secret := os.Getenv("EXAMPLE_RP_SECRET")
+	if *credFile != "" {
+		raw, err := os.ReadFile(*credFile)
+		if err != nil {
+			log.Fatal(err)
+		}
+		for _, l := range strings.Split(string(raw), "\n") {
+			k, v, _ := strings.Cut(strings.TrimSpace(l), "=")
+			switch k {
+			case "client_id":
+				*clientID = v
+			case "client_secret":
+				secret = v
+			}
+		}
+	}
 	if *issuer == "" || *clientID == "" {
 		log.Fatal("-issuer and -client-id are required")
 	}
@@ -107,7 +129,11 @@ func main() {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		_, _ = w.Write([]byte(`<!doctype html><a href="/login" data-e2e="rp-link-login">Sign in with Samba Conductor</a>`))
 	})
-	log.Printf("example-rp on http://%s", *listen)
 	srv := &http.Server{Addr: *listen, ReadHeaderTimeout: 10 * time.Second}
+	if *tlsCert != "" {
+		log.Printf("example-rp on https://%s", *listen)
+		log.Fatal(srv.ListenAndServeTLS(*tlsCert, *tlsKey))
+	}
+	log.Printf("example-rp on http://%s", *listen)
 	log.Fatal(srv.ListenAndServe())
 }

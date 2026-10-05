@@ -27,6 +27,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/crewjam/saml"
 	"github.com/crewjam/saml/samlsp"
 )
 
@@ -66,10 +67,15 @@ func main() {
 	}
 	key, cert := selfSigned()
 	rootURL, _ := url.Parse(*root)
-	sp, err := samlsp.New(samlsp.Options{URL: *rootURL, Key: key, Certificate: cert, IDPMetadata: md, AllowIDPInitiated: true})
+	// SignRequest publishes the signing certificate in the metadata (the
+	// idp then verifies this SP's query-signed logout requests); single
+	// logout over HTTP-Redirect only.
+	sp, err := samlsp.New(samlsp.Options{URL: *rootURL, Key: key, Certificate: cert, IDPMetadata: md, AllowIDPInitiated: true,
+		SignRequest: true})
 	if err != nil {
 		log.Fatal(err)
 	}
+	sp.ServiceProvider.LogoutBindings = []string{saml.HTTPRedirectBinding}
 	http.Handle("/saml/", sp)
 	slo := &sloHandler{sp: sp, idpCert: idpSigningCert(md)}
 	http.HandleFunc("/saml/slo", slo.serveSLO)

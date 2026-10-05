@@ -161,8 +161,9 @@ enabled = true
 ```
 
 ```sh
+sudo systemctl stop conductor-idp                      # a socket unit does not start while its service runs
 sudo systemctl enable --now conductor-idp-api.socket   # /run/conductor-idp/api.sock, conductor-idp:conductor 0660
-sudo systemctl restart conductor-idp
+sudo systemctl start conductor-idp
 ```
 
 The socket admits only the `conductor` user (`SO_PEERCRED`; the unit runs
