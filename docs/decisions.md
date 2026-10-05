@@ -249,3 +249,40 @@ parties (example RP, example SP, Grafana) run in containers on the host.
   (a shorter absolute lifetime ends them sooner, never later).
 - With the conductor 2FA backend the local policy is not used; conductor
   shows its own policy instead.
+
+## D13. OpenID Foundation conformance suite
+
+Run locally against a test deployment (the suite's own containers, a local
+build of its current sources): plans `oidcc-basic-certification-test-plan`
+(discovery, static clients, `client_secret_basic`) and
+`oidcc-config-certification-test-plan`. Because conductor-idp requires
+PKCE S256 for every client (D2), the suite was patched locally to send a
+`code_challenge` in every authorization request and the `code_verifier` at
+the token endpoint (two lines in `AbstractOIDCCServerTest`); without that
+patch every test except `oidcc-ensure-request-with-valid-pkce-succeeds`
+stops at the authorization endpoint, which is the intended behaviour.
+
+Results of the basic plan (35 modules): 20 passed; 7 passed with warnings;
+4 need a reviewer's screenshot by design (the error page for an
+unregistered redirect URI and for a request object whose redirect URI
+differs, and the login page shown again for `prompt=login` and
+`max_age=1`: all showed the expected page); 4 skipped (the `address` and
+`phone` scopes and request objects are not supported); 1 failed:
+`oidcc-server-client-secret-post`, since confidential clients authenticate
+with `client_secret_basic` only. The warnings: the ID token carries a
+`client_id` claim (added by the library), `acr` is not returned when
+`acr_values` is requested, the `claims` request parameter is not supported
+(`claims_parameter_supported` is false), and the test user had no value for
+some standard claims of the `profile` scope. The config plan fails one
+check: OpenID Connect Core makes RS256 mandatory to implement for ID token
+signatures, and conductor-idp signs with ES256 only.
+
+Found and fixed by the run: token endpoint answers to a refresh grant had
+no `Cache-Control: no-store` (RFC 6749 5.1); every token and userinfo
+answer now has it.
+
+Deliberate deviations, kept: PKCE for every client, `client_secret_basic`
+only, ES256 only, no request objects, no `claims` parameter. Each of them
+narrows what clients can do rather than weakening a check; RS256 (for
+clients that cannot verify ES256) and `client_secret_post` are the ones a
+certification would need.

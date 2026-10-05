@@ -6,7 +6,12 @@ and the family's [architecture.md](https://github.com/openbasalt/samba-conductor
 
 Status: pre-release, no tagged version yet. OIDC and SAML validated end to end in
 an isolated two-DC lab with an independent OIDC client, Grafana and a
-crewjam SAML SP, desktop and mobile ([`docs/usage-p4.md`](docs/usage-p4.md)).
+crewjam SAML SP, desktop and mobile ([`docs/usage-p4.md`](docs/usage-p4.md)),
+and managed from conductor's Single sign-on section with single logout and
+passkeys (conductor's `docs/usage-p4b.md`). The OpenID Foundation
+conformance suite's basic and config plans were run locally; results and
+the deliberate deviations (PKCE for every client, ES256 only,
+`client_secret_basic` only) are in [decisions D13](docs/decisions.md).
 
 | | |
 |---|---|
