@@ -37,7 +37,10 @@ Manage SAML service providers.
 Signing keys.
 .TP
 .BI "enroll-link \-user " NAME
-One-time second-factor enrollment link for an administrator.
+One-time second-factor enrollment link for an administrator (on the admin
+listener when
+.B server.admin_listen
+is set; only that listener accepts it).
 .TP
 .BI "mfa reset \-user " NAME
 Remove a user's second factor (local backend).

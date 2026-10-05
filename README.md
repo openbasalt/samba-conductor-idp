@@ -51,7 +51,10 @@ the deliberate deviations (PKCE for every client, ES256 only,
   socket; docs/decisions.md D4).
 - Managed from conductor's "Single sign-on" section through a local
   management API (clients, SPs with presets and metadata import, previews,
-  keys, settings, activity), or with the CLI and its own admin pages.
+  keys, settings, activity), or with the CLI and its own admin pages,
+  which can have a listener of their own on an internal network (the
+  public listener then answers 404 for them) or be turned off
+  (`server.admin_listen`, docs/decisions.md D14).
 - Security: no JavaScript except the WebAuthn script on the second-factor
   page (CSP nonce + SRI; `script-src 'none'` everywhere else, form-action
   limited to the flow's own targets), CSRF tokens + Fetch metadata,

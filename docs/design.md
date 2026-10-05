@@ -138,6 +138,32 @@ served.
   is evaluated by SID with nested groups, at sign-in and again at every
   token issuance and refresh.
 
+## Admin pages
+
+- The admin pages (`/admin`: clients, SAML service providers, signing
+  keys, second-factor resets and enrollment links, the audit log) need a
+  fully signed-in administrator with a second factor in the current
+  session, re-checked against AD.
+- `server.admin_listen` decides where they are served (decision D14):
+  unset, on the main listener; an address, on a separate listener meant
+  for an internal network or a VPN; `"off"`, nowhere (the CLI and
+  conductor's management API remain).
+- With a separate listener, the main listener registers no admin route:
+  `/admin` and everything below it answer like any unknown path (404), the
+  home page no longer links to them, and administrator enrollment links
+  are accepted only on the admin listener. The admin listener serves the
+  admin pages plus the sign-in, password change, second-factor and
+  enrollment pages, sign-out, static files and `/healthz`; no OpenID
+  Connect or SAML endpoint and no consent page. Only administrators can
+  sign in there, always with a second factor.
+- Each listener has its own session table and cookie names (the admin
+  session cookie is `__Host-idp-admin-session`, SameSite=Strict), so a
+  session of one is never valid on the other, even when both share a host
+  name. With `server.admin_url` set, the admin listener answers only for
+  that host name.
+- The admin listener has its own TLS certificate or reverse proxy settings,
+  with the same rules as the main listener.
+
 ## Consent
 
 - First-party clients skip the consent screen.
@@ -151,7 +177,8 @@ served.
   administrator without one enrolls through a one-time link from
   `conductor-idp enroll-link` or the admin pages); everyone else follows
   `off`, `optional` or `required`; a client or SP can require it, which
-  steps up an already signed-in user.
+  steps up an already signed-in user. With the admin pages on a separate
+  listener, enrollment links point at it and only it accepts them.
 - Backend `local` (default): TOTP secrets in conductor-idp's database,
   sealed with AES-256-GCM under the master key (additional data: the
   objectGUID), and hashed single-use recovery codes.
@@ -160,7 +187,8 @@ served.
   (authenticator app, recovery codes, security keys and passkeys) and
   conductor's role-based policy. Security keys registered in conductor
   work at the IdP when the IdP's origin is one of conductor's WebAuthn
-  origins (a shared parent domain as RP ID, or WebAuthn related origins).
+  origins (a shared parent domain as RP ID, or WebAuthn related origins);
+  with a separate admin listener, its origin has to be one of them too.
 - A failing second-factor backend fails closed.
 
 ## Management API
@@ -182,7 +210,8 @@ served.
 - `__Host-idp-session` is SameSite=Lax because relying parties send the
   browser through cross-site redirects; every POST still needs a CSRF
   token plus same-origin Fetch metadata or `Origin`. The pre-session CSRF
-  cookie is Strict.
+  cookie is Strict. A separate admin listener has its own sessions and
+  cookies (Admin pages, above).
 - No JavaScript on any page (`script-src 'none'`), except the WebAuthn
   script on the second-factor page (nonce and Subresource Integrity). CSP
   `form-action` is `'self'` plus the origin of the request's validated

@@ -286,3 +286,64 @@ only, ES256 only, no request objects, no `claims` parameter. Each of them
 narrows what clients can do rather than weakening a check; RS256 (for
 clients that cannot verify ES256) and `client_secret_post` are the ones a
 certification would need.
+
+## D14. Admin pages on a separate listener (2026-10-05)
+
+The sign-in pages and the OpenID Connect and SAML endpoints have to be
+reachable by every user, often from the internet; the admin pages
+(`/admin`) only by administrators. `server.admin_listen` separates them.
+
+- Unset: the admin pages stay on the main listener, as before; the service
+  logs a line recommending `admin_listen` for a deployment exposed to the
+  internet. Existing files keep working unchanged.
+- An address: the admin pages move to a second listener of their own,
+  meant for an internal network or a VPN. The main listener does not
+  register any admin route, so `/admin` and everything below it answer
+  exactly like an unknown path (a plain 404, no redirect and nothing that
+  names the admin listener), and the public home page no longer links to
+  them. The admin listener serves the admin pages and only what an
+  administrator needs to reach them: the sign-in, password change,
+  second-factor and enrollment pages, sign-out, static files and
+  `/healthz`. It serves no OpenID Connect or SAML endpoint, no consent page
+  and continues no flow; a user who is not an administrator is refused at
+  sign-in there, and the second factor is always required.
+- `"off"`: no admin pages anywhere. Clients and SAML service providers are
+  then managed with the CLI and through the management API (conductor's
+  "Single sign-on" section, D10).
+- TLS and proxies follow the main listener's rules: built-in TLS
+  (`admin_tls_cert` and `admin_tls_key`, defaulting to the main
+  certificate) or `admin_behind_proxy` on a loopback address with its own
+  `admin_trusted_proxies`. Address overlaps with `listen` are refused.
+- `admin_url` is the admin origin as browsers see it; it is used for
+  enrollment links and, when set, the admin listener answers only for its
+  host name (421 otherwise), which closes DNS rebinding and keeps the
+  admin cookies on one origin. Without it the default is the issuer's host
+  name with the admin port; behind a proxy it is required.
+- Sessions are separate per listener: each has its own in-memory session
+  table and its own cookie names (`__Host-idp-admin-session` and
+  `__Host-idp-admin-pre` on the admin listener). Browsers do not isolate
+  cookies by port, so the names differ even when both listeners share a
+  host name, and a session of one listener presented to the other under
+  any name is unknown there. The admin session cookie is SameSite=Strict
+  (no relying party ever redirects to the admin listener); the public one
+  stays Lax (D5). CSRF tokens, Fetch metadata and `Origin` checks apply on
+  both. A second-factor reset from the admin pages ends the user's
+  sessions on both listeners.
+- Administrator enrollment links: with a separate admin listener, only
+  that listener accepts them (the public sign-in form drops the token and
+  an administrator without a second factor is refused there), and
+  `enroll-link` and the admin pages print links on the admin origin. An
+  administrator's second factor is therefore set up only from the internal
+  network, and a leaked link plus a phished password is useless from the
+  internet. Enrolled administrators still sign in to applications on the
+  public listener with their second factor. With the admin pages off, the
+  public listener keeps accepting enrollment links, because it is the only
+  place where an administrator can enroll with the local second-factor
+  backend; with the conductor backend administrators enroll in conductor.
+- WebAuthn (conductor backend): security keys are bound to conductor's RP
+  ID and conductor checks the origin of every assertion, so the admin
+  origin must be one of conductor's WebAuthn origins (under the shared RP
+  ID, or in its related origins), as the public origin already is (D4).
+  Otherwise security keys fail on the admin listener and administrators
+  are left with their authenticator app, or only their recovery codes when
+  conductor requires a security key for them.

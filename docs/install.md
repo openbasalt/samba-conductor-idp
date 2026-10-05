@@ -146,7 +146,8 @@ cidp enroll-link -user jsilva.admin        # first administrator: one-time 2FA e
 Administrators (Domain Admins, or `roles.admin_groups`) always need 2FA.
 Without an enrollment they can enroll only through a one-time link
 (`enroll-link`, valid 24 h). After that, the admin pages are at
-`<issuer>/admin`.
+`<issuer>/admin`, or on the admin listener when `server.admin_listen` is
+set (section 10).
 
 ## 8. Managing it from conductor (optional)
 
@@ -205,6 +206,62 @@ common parent domain as `webauthn.rp_id` (`rp_id = "example.com"`,
 `webauthn.related_origins` when conductor answers on the RP ID's host
 itself. Keys registered before such a change are bound to the old RP ID
 and must be registered again.
+
+## 10. Exposing the IdP to the internet
+
+Users and relying parties outside the network need the sign-in pages and
+the OpenID Connect and SAML endpoints; nobody outside needs the admin
+pages. Serve the admin pages on a listener of their own, on an internal or
+VPN address, and expose only the main listener:
+
+```toml
+# idp.toml: the main listener behind the reverse proxy that faces the internet
+[server]
+issuer = "https://idp.example.com"
+listen = "127.0.0.1:9080"
+behind_proxy = true
+trusted_proxies = ["127.0.0.1/32"]
+# the admin pages on the VPN address only, with built-in TLS
+admin_listen = "10.0.0.5:9444"
+admin_tls_cert = "/etc/conductor-idp/tls/admin-cert.pem"
+admin_tls_key = "/etc/conductor-idp/tls/admin-key.pem"
+admin_url = "https://idp-admin.example.com:9444"
+```
+
+With built-in TLS on the main listener instead (`listen = ":9443"` and
+`tls_cert`/`tls_key`), bind it to the public address rather than all
+addresses when the admin listener uses the same port, and leave out
+`admin_tls_cert`/`admin_tls_key` to reuse the main certificate (it must
+then also be valid for the host name of `admin_url`). With
+`admin_listen = "off"` there are no admin pages at all; clients and SAML
+service providers are then managed with the CLI (section 6) or from
+conductor (section 8).
+
+What changes:
+
+- The main listener answers 404 for `/admin` and every path below it,
+  like any unknown path, and the home page no longer links to the admin
+  pages. Put only this listener behind the reverse proxy; never forward
+  the admin port.
+- The admin listener serves the admin pages and the sign-in pages an
+  administrator needs to reach them, nothing else (no OpenID Connect or
+  SAML endpoint). Only administrators can sign in there, always with a
+  second factor. Its sessions and cookies are its own: signing in on one
+  listener does not sign in on the other.
+- `server.admin_url` is the address administrators type. When set, the
+  admin listener answers only for its host name. Without it the default is
+  the issuer's host name with the admin port. Behind a proxy of its own
+  (`admin_listen = "127.0.0.1:9081"`, `admin_behind_proxy = true`,
+  `admin_trusted_proxies`), `admin_url` is required.
+- Administrator enrollment links (`cidp enroll-link`, or the admin pages)
+  point at `admin_url` and work only there: open them over the VPN. The
+  main listener refuses them. With `admin_listen = "off"` they stay on the
+  issuer, since there is nowhere else to enroll.
+- With the conductor second-factor backend and security keys (section 9),
+  add the admin origin to conductor's WebAuthn origins too, or keys will
+  not work on the admin listener.
+- Allow the admin port only from the VPN or internal network in the host
+  firewall. `cidp check` prints where the admin pages are served.
 
 ## Relying parties
 

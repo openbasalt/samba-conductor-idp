@@ -12,10 +12,11 @@ File types:
   conductor_idp_var_lib_t  /var/lib/conductor-idp (clients, keys, audit log)
 
 conductor-idp listens on its HTTPS port (9443 by default, which the base
-policy types pki_ca_port_t; http_port_t ports are allowed too) and connects
-to the domain controllers over LDAP/LDAPS and Kerberos. Another port:
+policy types pki_ca_port_t, like 9444 to 9447 for a separate admin
+listener; http_port_t ports are allowed too) and connects to the domain
+controllers over LDAP/LDAPS and Kerberos. A port with no type yet:
 
-  semanage port -a -t http_port_t -p tcp 9444
+  semanage port -a -t http_port_t -p tcp 9480
 
 Troubleshooting:
 

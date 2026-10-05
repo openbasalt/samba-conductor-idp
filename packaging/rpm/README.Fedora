@@ -19,7 +19,9 @@ and the service runs in conductor_idp_t.
   6. sudo firewall-cmd --permanent --add-port=9443/tcp && sudo firewall-cmd --reload
 
 The default port 9443 has the SELinux type pki_ca_port_t, which the policy
-lets conductor-idp use. Another port needs a type the policy allows:
+lets conductor-idp use; so do 9444 to 9447 (a separate admin listener,
+server.admin_listen, whose port should be opened only to the internal
+network). Another port needs a type the policy allows:
   sudo semanage port -a -t http_port_t -p tcp <port>
 
 Upgrades restart the service when it is running. "dnf remove

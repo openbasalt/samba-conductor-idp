@@ -33,6 +33,15 @@ gen-key`, the service account password in `credentials/ad-password`, edit
 sudo firewall-cmd --permanent --add-port=9443/tcp && sudo firewall-cmd --reload
 ```
 
+With the admin pages on a listener of their own (`server.admin_listen`,
+section 10 of `docs/install.md`), open the admin port only to the VPN or
+internal network, for example through the `internal` zone:
+
+```sh
+sudo firewall-cmd --permanent --zone=internal --add-source=10.0.0.0/24
+sudo firewall-cmd --permanent --zone=internal --add-port=9444/tcp && sudo firewall-cmd --reload
+```
+
 ## SELinux
 
 conductor-idp runs in `conductor_idp_t`: it reads `/etc/conductor-idp`
@@ -41,8 +50,9 @@ conductor-idp runs in `conductor_idp_t`: it reads `/etc/conductor-idp`
 DCs over LDAP/LDAPS and Kerberos. The credentials directory
 (`conductor_idp_cred_t`) is readable by systemd only.
 
-The default port 9443 is typed `pki_ca_port_t` by the base policy (the
-policy lets conductor-idp bind it, and any `http_port_t` port). Another
+The default port 9443 is typed `pki_ca_port_t` by the base policy, as are
+9444 to 9447 (the policy lets conductor-idp bind them, and any
+`http_port_t` port), so an admin listener on 9444 needs no change. Another
 port: `sudo semanage port -a -t http_port_t -p tcp <port>`.
 
 CLI commands that touch the database (`conductor-idp client add`, ...) are
