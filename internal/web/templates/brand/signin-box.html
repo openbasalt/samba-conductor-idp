@@ -1,0 +1,26 @@
+<div class="card narrow signin-card">
+  <h1 data-e2e="signin-text-title">{{if and .B .B.SignInTitle}}{{.B.SignInTitle}}{{else}}{{t "signin.title"}}{{end}}</h1>
+  {{with .B}}{{with .SignInNote}}<p class="brand-text" data-e2e="signin-text-brand-note">{{.}}</p>{{end}}{{end}}
+  {{template "app-note" .}}
+  {{if .D.Notice}}<div class="alert-info" role="status" data-e2e="signin-text-notice">{{.D.Notice}}</div>{{end}}
+  {{template "error-alert" .D.Error}}
+  {{if .D.Enroll}}<div class="alert-info" data-e2e="signin-text-enroll">{{t "signin.enroll_link"}}</div>{{end}}
+  <form method="post" action="/login" autocomplete="on">
+    {{template "csrf" .}}{{template "cont" .}}
+    {{if .D.Enroll}}<input type="hidden" name="enroll" value="{{.D.Enroll}}">{{end}}
+    <div class="field">
+      <label for="username">{{t "signin.username"}}</label>
+      <input id="username" name="username" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" required value="{{.D.Username}}" data-e2e="signin-input-username">
+      <span class="hint">{{t "signin.username_hint"}}</span>
+    </div>
+    <div class="field">
+      <label for="password">{{t "signin.password"}}</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" required data-e2e="signin-input-password">
+    </div>
+    <button class="btn btn-primary btn-block" type="submit" data-e2e="signin-btn-submit">{{t "signin.submit"}}</button>
+  </form>
+  {{with .B}}{{if or .Help .HelpURL .PolicyURL}}<div class="brand-help" data-e2e="signin-help">
+    {{with .Help}}<p class="brand-text small" data-e2e="signin-text-help">{{.}}</p>{{end}}
+    {{if or .HelpURL .PolicyURL}}<p class="small row">{{with .HelpURL}}<a href="{{.}}" data-e2e="signin-link-help">{{t "brand.help"}}</a>{{end}}{{with .PolicyURL}}<a href="{{.}}" data-e2e="signin-link-password-policy">{{t "brand.password_policy"}}</a>{{end}}</p>{{end}}
+  </div>{{end}}{{end}}
+</div>

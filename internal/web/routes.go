@@ -96,9 +96,11 @@ func (s *Server) routes() {
 		_, _ = w.Write([]byte("ok"))
 	})
 	if s.surface&surfacePublic == 0 {
-		// The admin listener serves no OpenID Connect or SAML endpoint.
+		// The admin listener serves no OpenID Connect or SAML endpoint,
+		// and no branding (its pages keep the product look).
 		return
 	}
+	s.brandRoutes()
 	if s.saml != nil {
 		s.mux.HandleFunc("GET "+samlidp.MetadataPath, s.handleSAMLMetadata)
 	}

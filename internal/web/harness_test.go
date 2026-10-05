@@ -212,6 +212,9 @@ type harnessOpts struct {
 	// admin: "" (admin pages on the main listener), "split" (a separate
 	// admin listener, h.adminTS) or "off".
 	admin string
+	// templatesDir and allowed set the [branding] section.
+	templatesDir string
+	allowed      []string
 }
 
 func newHarness(t *testing.T, o harnessOpts) *harness {
@@ -252,6 +255,7 @@ func newHarness(t *testing.T, o harnessOpts) *harness {
 	case "off":
 		cfg.Server.AdminListen = config.AdminOff
 	}
+	cfg.Branding.TemplatesDir, cfg.Branding.AllowedOrigins = o.templatesDir, o.allowed
 	if err := cfg.Validate(); err != nil {
 		t.Fatal(err)
 	}

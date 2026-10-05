@@ -190,7 +190,7 @@ func cmdServe(ctx context.Context, cfgPath string, _ []string) error {
 			return fmt.Errorf("api: %w", err)
 		}
 		as, err := api.New(api.Options{Config: e.cfg, Store: e.store, Dir: dir, SAML: samlIdP, SAMLKeys: p.saml, Keys: rotator{p},
-			Apply: srv.ApplySettings, Logger: log, Version: version, AllowedUIDs: uids})
+			Apply: srv.ApplySettings, ApplyBranding: srv.ApplyBranding, Logger: log, Version: version, AllowedUIDs: uids})
 		if err != nil {
 			return err
 		}
@@ -310,6 +310,9 @@ func cmdCheck(ctx context.Context, cfgPath string) error {
 	}
 	defer e.close()
 	fmt.Println("configuration: ok")
+	if err := printTemplateCheck(e.cfg); err != nil {
+		fmt.Println(err)
+	}
 	switch e.cfg.AdminMode() {
 	case config.AdminShared:
 		fmt.Println("admin pages: on the main listener (" + e.cfg.Issuer() + "/admin)")

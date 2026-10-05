@@ -263,6 +263,28 @@ What changes:
 - Allow the admin port only from the VPN or internal network in the host
   firewall. `cidp check` prints where the admin pages are served.
 
+## 11. Branding (optional)
+
+The organization's look (name, logos, colors, texts, support contact,
+links) is set in conductor, Settings > Branding, and sent here through the
+management API (section 8); nothing to configure on this side. Without
+conductor the pages keep the product look.
+
+Template overrides are files on this host:
+
+```sh
+install -d -o root -g conductor-idp -m 0750 /etc/conductor-idp/templates
+conductor-idp templates list                     # the partials and their contract
+conductor-idp templates show signin-box > /etc/conductor-idp/templates/signin-box.html
+# edit it, then in idp.toml:  [branding] templates_dir = "/etc/conductor-idp/templates"
+conductor-idp templates check                    # also run after every upgrade
+systemctl restart conductor-idp
+```
+
+The files are read at startup. `templates check` exits with an error when
+an override is refused or was written against an older built-in partial.
+See [branding.md](branding.md).
+
 ## Relying parties
 
 - OIDC discovery: `<issuer>/.well-known/openid-configuration`. Clients must

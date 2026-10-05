@@ -5,32 +5,22 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="referrer" content="no-referrer">
 <meta name="robots" content="noindex, nofollow">
-<title>{{template "title" .}} · {{.Product}}</title>
+<title>{{template "title" .}} · {{if .B}}{{.B.Name}}{{else}}{{.Product}}{{end}}</title>
 <link rel="stylesheet" href="/static/app.css?v={{.Version}}">
-<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+{{with .B}}<link rel="stylesheet" href="{{.CSS}}">{{with .CustomCSS}}<link rel="stylesheet" href="{{.}}">{{end}}{{end}}
+{{if and .B .B.Favicon}}<link rel="icon" href="{{.B.Favicon}}" type="{{.B.FaviconType}}">{{else}}<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">{{end}}
 {{if .Nonce}}<script src="/static/webauthn.js?v={{.Version}}" nonce="{{.Nonce}}" integrity="{{.ScriptSRI}}" defer></script>{{end}}
 </head>
-<body>
+<body{{if and .B .B.Background .BG}} class="brand-bg"{{end}}>
 <a class="skip" href="#main">{{t "a11y.skip"}}</a>
-<header class="topbar">
-  <div class="topbar-inner">
-    <a class="brand" href="/" data-e2e="nav-link-home"><img src="/static/logo.svg" alt="" width="28" height="28"><span>{{.Product}}</span></a>
-    {{if .User}}<span class="who" data-e2e="nav-text-user">{{.User.Name}}</span>
-    <form method="post" action="/logout" class="topbar-form">{{template "csrf" .}}<button class="btn btn-small" type="submit" data-e2e="nav-btn-signout">{{t "nav.signout"}}</button></form>{{end}}
-  </div>
-</header>
+{{if .B}}{{template "brand-header" .}}{{else}}{{template "product-brand-header" .}}{{end}}
 <div class="shell">
 <main id="main">
+{{with .B}}{{with .Notice}}<div class="brand-notice" role="note" data-e2e="brand-text-notice">{{.}}</div>{{end}}{{end}}
 {{range .Flashes}}<div class="flash flash-{{.Kind}}" role="status" data-e2e="flash-{{.Kind}}">{{.Msg}}</div>{{end}}
 {{template "content" .}}
 </main>
 </div>
-<footer>
-  <div class="prefs">
-    <span>{{t "footer.language"}}: <a href="{{pref .Query "lang" "en"}}" data-e2e="footer-link-lang-en" lang="en">English</a> · <a href="{{pref .Query "lang" "pt-BR"}}" data-e2e="footer-link-lang-pt-br" lang="pt-BR">Português (Brasil)</a></span>
-    <span>{{t "footer.theme"}}: <a href="{{pref .Query "theme" "light"}}" data-e2e="footer-link-theme-light">{{t "footer.theme.light"}}</a> · <a href="{{pref .Query "theme" "dark"}}" data-e2e="footer-link-theme-dark">{{t "footer.theme.dark"}}</a> · <a href="{{pref .Query "theme" "system"}}" data-e2e="footer-link-theme-system">{{t "footer.theme.system"}}</a></span>
-  </div>
-  <div>{{t "footer.product"}} {{.Version}}</div>
-</footer>
+{{if .B}}{{template "brand-footer" .}}{{else}}{{template "product-brand-footer" .}}{{end}}
 </body>
 </html>{{end}}

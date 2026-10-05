@@ -25,6 +25,7 @@ import (
 	"crypto/sha256"
 	"crypto/x509"
 	"encoding/hex"
+	"encoding/json"
 	"encoding/pem"
 	"errors"
 	"fmt"
@@ -38,6 +39,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/openbasalt/samba-conductor-idp/branding"
 	"github.com/openbasalt/samba-conductor-idp/idpapi"
 	"github.com/openbasalt/samba-conductor-idp/internal/config"
 	"github.com/openbasalt/samba-conductor-idp/internal/directory"
@@ -65,9 +67,11 @@ type Options struct {
 	SAMLKeys *samlidp.KeyManager
 	Keys     KeyRotator
 	// Apply makes saved settings effective in the web server.
-	Apply   func(idpapi.Settings)
-	Logger  *slog.Logger
-	Version string
+	Apply func(idpapi.Settings)
+	// ApplyBranding makes a pushed branding effective in the web server.
+	ApplyBranding func(version int64, b branding.Branding, at time.Time, by string, assets []store.BrandingAsset)
+	Logger        *slog.Logger
+	Version       string
 	// AllowedUIDs may connect (from api.allowed_users / allowed_uids).
 	AllowedUIDs []int
 	// HTTP fetches SP metadata by URL (nil: a default client).
@@ -449,6 +453,12 @@ func (s *Server) dispatch(ctx context.Context, op idpapi.Op, p idpapi.Params) (a
 		detail := fmt.Sprintf("version=%d session_idle_minutes=%d session_absolute_hours=%d mfa_policy=%s consent_text_languages=%d",
 			v.Version, in.SessionIdleMinutes, in.SessionAbsoluteHours, in.MFAPolicy, len(in.ConsentText))
 		return v, "settings", detail, nil
+
+	case idpapi.OpBrandingGet:
+		v, err := s.brandingView(ctx)
+		return v, "", "", err
+	case idpapi.OpBrandingUpdate:
+		return s.brandingUpdate(ctx, p.(*idpapi.BrandingUpdateParams))
 
 	case idpapi.OpActivity:
 		a, err := s.activity(ctx, p.(*idpapi.ActivityParams).Days)
@@ -905,4 +915,63 @@ func (s *Server) activity(ctx context.Context, days int) (idpapi.Activity, error
 	}
 	a.Recent = auditViews(recent)
 	return a, nil
+}
+
+// brandingView returns the stored branding (version 0: none).
+func (s *Server) brandingView(ctx context.Context) (idpapi.BrandingView, error) {
+	row, err := s.o.Store.GetBranding(ctx)
+	if errors.Is(err, store.ErrNotFound) {
+		return idpapi.BrandingView{}, nil
+	}
+	if err != nil {
+		return idpapi.BrandingView{}, err
+	}
+	v := idpapi.BrandingView{Version: row.Version, UpdatedAt: row.UpdatedAt, UpdatedBy: row.UpdatedBy}
+	if err := json.Unmarshal([]byte(row.Data), &v.Branding); err != nil {
+		return idpapi.BrandingView{}, fmt.Errorf("stored branding: %w", err)
+	}
+	return v, nil
+}
+
+// brandingUpdate stores and applies a branding pushed by conductor. The
+// parameters were validated by Decode (the document's rules, and every
+// image checked again by content against its description).
+func (s *Server) brandingUpdate(ctx context.Context, q *idpapi.BrandingUpdateParams) (any, string, string, error) {
+	data, err := json.Marshal(q.Branding)
+	if err != nil {
+		return nil, "branding", "", err
+	}
+	types := map[string]string{}
+	for _, a := range q.Branding.Assets {
+		types[a.SHA256] = a.Type
+	}
+	var assets []store.BrandingAsset
+	for _, a := range q.Assets {
+		assets = append(assets, store.BrandingAsset{SHA256: a.SHA256, ContentType: types[a.SHA256], Data: a.Data})
+	}
+	if err := s.o.Store.PutBranding(ctx, q.Version, string(data), "conductor", assets); err != nil {
+		return nil, "branding", "", err
+	}
+	v, err := s.brandingView(ctx)
+	if err != nil {
+		return nil, "branding", "", err
+	}
+	if s.o.ApplyBranding != nil {
+		s.o.ApplyBranding(v.Version, v.Branding, v.UpdatedAt, v.UpdatedBy, assets)
+	}
+	b := q.Branding
+	slots := make([]string, 0, len(b.Assets))
+	for slot := range b.Assets {
+		slots = append(slots, slot)
+	}
+	sort.Strings(slots)
+	langs := make([]string, 0, len(b.Texts))
+	for l := range b.Texts {
+		langs = append(langs, l)
+	}
+	sort.Strings(langs)
+	detail := fmt.Sprintf("version=%d org_name=%q primary=%s accent=%s images=%s texts=%s support=%t links=%t",
+		q.Version, b.OrgName, b.PrimaryColor, b.AccentColor, strings.Join(slots, ","), strings.Join(langs, ","),
+		b.Support != (branding.Support{}), b.Links != (branding.Links{}))
+	return v, "branding", detail, nil
 }

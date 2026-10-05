@@ -347,3 +347,66 @@ reachable by every user, often from the internet; the admin pages
   Otherwise security keys fail on the admin listener and administrators
   are left with their authenticator app, or only their recovery codes when
   conductor requires a security key for them.
+
+## D15. Branding of the user-facing pages (2026-10-05)
+
+The sign-in, second-factor, enrollment, consent, logout and error pages
+carry the organization's look; the admin pages and the protocol endpoints
+never do.
+
+- Level 1 (organization name, logos for the light and dark themes,
+  favicon, sign-in background image, primary and accent colors, texts per
+  language, support contact, links) is edited in conductor (Settings >
+  Branding) and arrives through the management API: `branding.get` and
+  `branding.update`. The update is self-contained: it carries the document
+  and every image it references, conductor-idp checks them again (the
+  document's rules, each image by content against its description) and
+  replaces what it had in one transaction. It keeps the branding in its
+  own database, so the pages keep their look when conductor is down or
+  restarted, and records conductor's version number. Every update is in
+  the audit chain with the acting administrator.
+- Protocol versioning: a new operation is additive and keeps protocol
+  version 1 (an older conductor-idp answers "not allowlisted", which
+  conductor reports as "too old for branding"); changing an existing
+  operation's parameters or result bumps it, since both sides decode
+  strictly. Existing results were not changed.
+- Shared code: the document, its limits and checks, the contrast rules,
+  the image checks, the stylesheet generator and the override engine are
+  the public `branding` package of this module, used by both programs.
+- CSP unchanged. Colors are CSS custom properties in a generated
+  same-origin stylesheet (`/branding/theme.css`, versioned by its hash),
+  never inline styles; images are served from `/branding/assets/<sha256>`
+  with their checked type, `nosniff`, a `default-src 'none'` policy and a
+  long cache (the URL is the digest). Only `branding.allowed_origins` can
+  widen the policy, and only `img-src` and `font-src` of branded pages.
+- Contrast: the primary color colors links and buttons, so it must reach
+  4.5:1 on the light background and surface (WCAG AA) or it is refused;
+  the dark theme uses a lighter mix that reaches 4.5:1 there; text on
+  brand colors is white or black, whichever contrasts more (one of them
+  always reaches 4.58:1). An accent color below 3:1 against the header is
+  a warning.
+- Images: PNG, JPEG and WebP (ICO and PNG for the favicon), identified by
+  their magic bytes, dimensions read from the header only, size limits per
+  slot (logos 256 KiB, favicon 64 KiB, background 1 MiB). SVG is refused:
+  it is a document that can carry scripts and links, and no sanitizer is
+  shipped; a raster image covers the need.
+- Level 2 (`branding.templates_dir`): files that replace the header, the
+  footer and the sign-in box, html/template with auto-escaping. Read at
+  startup only. A lint refuses scripts, other documents, `<link>`,
+  `<meta>`, `<style>`, inline styles, event handlers, script and data URLs,
+  the script nonce, nested definitions and forms that post elsewhere; a
+  sample rendering must keep the contract (required fields, actions and
+  data-e2e hooks, `alt` on images, images from this origin or an
+  allowlisted one). A refused file keeps the built-in partial with a
+  warning in the log; an override that fails at runtime on a page's data
+  is replaced by the built-in partial for that response. Each override
+  records the hash of the built-in body it was written against, and
+  `conductor-idp templates check` (and the startup log) reports overrides
+  whose built-in partial changed after an upgrade.
+- Never on the admin side: the admin listener registers no branding route
+  and renders the built-in partials; on a shared listener the admin pages
+  do the same. A stored branding that no longer validates is ignored with
+  an error in the log (product look): a bad branding must never stop users
+  from signing in.
+- The consent note stays a setting (D12), edited with the other single
+  sign-on settings; conductor's Branding page shows it and links there.

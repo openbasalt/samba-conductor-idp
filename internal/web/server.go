@@ -17,6 +17,7 @@ import (
 	"github.com/zitadel/oidc/v3/pkg/op"
 
 	"github.com/openbasalt/samba-conductor-ad/sid"
+	"github.com/openbasalt/samba-conductor-idp/branding"
 	"github.com/openbasalt/samba-conductor-idp/internal/config"
 	"github.com/openbasalt/samba-conductor-idp/internal/directory"
 	"github.com/openbasalt/samba-conductor-idp/internal/i18n"
@@ -79,6 +80,18 @@ type Server struct {
 	rt *atomic.Pointer[runtimeSettings]
 	// logouts are the single logout chains in progress.
 	logouts *logoutChains
+
+	// brand is the applied level 1 branding (pushed by conductor);
+	// tmplBuiltin are the pages without template overrides (the fallback
+	// when an override fails); overridden lists the partials replaced by
+	// the template directory, customCSS its custom.css; allowed are the
+	// origins branded pages may load images and fonts from.
+	brand       *atomic.Pointer[brandState]
+	tmplBuiltin map[string]map[string]*template.Template
+	overridden  []string
+	customCSS   []byte
+	customTag   string
+	allowed     []string
 
 	// surface is what this handler serves: the public pages, the admin
 	// pages, or both (admin pages on the main listener).
@@ -151,8 +164,30 @@ func New(o Options) (*Server, error) {
 		}
 		s.adminSIDs = append(s.adminSIDs, v)
 	}
-	if s.tmpl, err = s.loadTemplates(); err != nil {
+	s.allowed = s.cfg.AllowedOrigins()
+	if s.tmplBuiltin, err = s.loadTemplates(nil); err != nil {
 		return nil, err
+	}
+	s.tmpl = s.tmplBuiltin
+	if s.cfg.Branding.TemplatesDir != "" {
+		res := s.loadOverrides()
+		s.overridden, s.customCSS = res.Overridden, res.CustomCSS
+		if s.customCSS != nil {
+			s.customTag = tag(s.customCSS)
+		}
+		if len(s.overridden) > 0 {
+			if s.tmpl, err = s.loadTemplates(res.Bodies); err != nil {
+				return nil, err
+			}
+		}
+	}
+	s.brand = &atomic.Pointer[brandState]{}
+	if s.store != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		s.loadBranding(ctx)
+		cancel()
+	} else {
+		s.ApplyBranding(0, branding.Branding{}, time.Time{}, "", nil)
 	}
 	s.sess = newSessions(s.cfg.IdleTimeout(), s.cfg.AbsoluteTimeout(), now)
 	s.sessionName, s.preName, s.sessionSite = sessionCookie, preCookie, http.SameSiteLaxMode

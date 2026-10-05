@@ -115,3 +115,13 @@ enabled = false
 # socket = "/run/conductor-idp/api.sock"   # used when systemd passes no socket
 # socket_group = "conductor"               # group of a socket the service creates
 # allowed_users = ["conductor"]
+
+[branding]
+# Template overrides of the sign-in pages (docs/branding.md): header.html,
+# footer.html, signin-box.html and an optional custom.css. Unset: none.
+# The organization name, logos, colors and texts come from conductor
+# (Settings > Branding) through the management API.
+# templates_dir = "/etc/conductor-idp/templates"
+# Origins the branded pages may load images and fonts from (CSP img-src
+# and font-src of those pages only). Unset: this origin only.
+# allowed_origins = ["https://cdn.example.com"]

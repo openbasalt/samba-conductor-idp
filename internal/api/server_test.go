@@ -2,12 +2,15 @@ package api
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/base64"
+	"image"
+	"image/png"
 	"math/big"
 	"net"
 	"path/filepath"
@@ -19,6 +22,7 @@ import (
 	"time"
 
 	"github.com/openbasalt/samba-conductor-ad/sid"
+	"github.com/openbasalt/samba-conductor-idp/branding"
 	"github.com/openbasalt/samba-conductor-idp/idpapi"
 	"github.com/openbasalt/samba-conductor-idp/internal/config"
 	"github.com/openbasalt/samba-conductor-idp/internal/directory"
@@ -99,7 +103,9 @@ type env struct {
 	s       *Server
 	st      *store.Store
 	applied []idpapi.Settings
-	mu      sync.Mutex
+	// brandings are the versions applied to the web server.
+	brandings []int64
+	mu        sync.Mutex
 }
 
 func newEnv(t *testing.T) *env {
@@ -137,7 +143,12 @@ func newEnv(t *testing.T) *env {
 	idp := &samlidp.IdP{Store: st, Dir: dir, Keys: sk, BaseURL: cfg.Issuer(), AssertionTTL: 5 * time.Minute}
 	e := &env{st: st}
 	s, err := New(Options{Config: cfg, Store: st, Dir: dir, SAML: idp, SAMLKeys: sk, Keys: rot{ok, sk}, Version: "test",
-		AllowedUIDs: []int{1234}, Apply: func(v idpapi.Settings) { e.mu.Lock(); e.applied = append(e.applied, v); e.mu.Unlock() }})
+		AllowedUIDs: []int{1234}, Apply: func(v idpapi.Settings) { e.mu.Lock(); e.applied = append(e.applied, v); e.mu.Unlock() },
+		ApplyBranding: func(v int64, _ branding.Branding, _ time.Time, _ string, _ []store.BrandingAsset) {
+			e.mu.Lock()
+			e.brandings = append(e.brandings, v)
+			e.mu.Unlock()
+		}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -409,6 +420,62 @@ func TestSettings(t *testing.T) {
 	next.SessionAbsoluteHours = 99
 	if _, err := idpapi.NewRequest("req-00000003", idpapi.OpSettingsUpdate, actor, idpapi.SettingsUpdateParams{BaseVersion: 1, Settings: next}); err == nil {
 		t.Fatal("out of range accepted")
+	}
+}
+
+func testPNG(w, h int) []byte {
+	var buf bytes.Buffer
+	_ = png.Encode(&buf, image.NewRGBA(image.Rect(0, 0, w, h)))
+	return buf.Bytes()
+}
+
+// TestBranding: conductor pushes a branding (document and images); the
+// idp stores it, applies it, returns it and audits the change with the
+// acting administrator. A later push replaces it, images included.
+func TestBranding(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	var v idpapi.BrandingView
+	e.must(t, idpapi.OpBrandingGet, nil, &v)
+	if v.Version != 0 || !v.Branding.IsZero() {
+		t.Fatalf("initial %+v", v)
+	}
+	logo := testPNG(80, 20)
+	meta, err := branding.Inspect(branding.SlotLogoLight, logo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc := branding.Branding{OrgName: "Example Org", PrimaryColor: "#1d4ed8", Texts: map[string]branding.Texts{"en": {Notice: "Maintenance"}},
+		Assets: map[string]branding.Asset{branding.SlotLogoLight: meta}}
+	e.must(t, idpapi.OpBrandingUpdate, idpapi.BrandingUpdateParams{Version: 3, Branding: doc,
+		Assets: []idpapi.BrandingAsset{{SHA256: meta.SHA256, Data: logo}}}, &v)
+	if v.Version != 3 || v.Branding.OrgName != "Example Org" || v.UpdatedBy != "conductor" || len(e.brandings) != 1 {
+		t.Fatalf("updated %+v %v", v, e.brandings)
+	}
+	assets, _ := e.st.BrandingAssets(ctx)
+	if len(assets) != 1 || assets[0].ContentType != branding.TypePNG || !bytes.Equal(assets[0].Data, logo) {
+		t.Fatalf("assets %+v", assets)
+	}
+	evs, _, _ := e.st.ListAudit(ctx, store.AuditFilter{Action: "api.branding.update"}, 0, 5)
+	if len(evs) != 1 || !strings.Contains(evs[0].Detail, "version=3") || !strings.Contains(evs[0].ActorName, "conductor:admin") {
+		t.Fatalf("audit %+v", evs)
+	}
+	// A revert in conductor is a new version without the image: the idp
+	// drops it.
+	e.must(t, idpapi.OpBrandingUpdate, idpapi.BrandingUpdateParams{Version: 4, Branding: branding.Branding{OrgName: "Example"}}, &v)
+	if assets, _ = e.st.BrandingAssets(ctx); len(assets) != 0 || v.Version != 4 {
+		t.Fatalf("after revert %+v %+v", v, assets)
+	}
+	// Invalid documents never reach the store.
+	bad := doc
+	bad.Links.Help = "javascript:alert(1)"
+	if _, err := idpapi.NewRequest("req-00000005", idpapi.OpBrandingUpdate, actor, idpapi.BrandingUpdateParams{Version: 5, Branding: bad,
+		Assets: []idpapi.BrandingAsset{{SHA256: meta.SHA256, Data: logo}}}); err == nil {
+		t.Fatal("javascript: link accepted")
+	}
+	e.must(t, idpapi.OpBrandingGet, nil, &v)
+	if v.Version != 4 {
+		t.Fatalf("after refused update %+v", v)
 	}
 }
 

@@ -35,6 +35,12 @@ import (
 
 // ProtocolVersion is bumped on incompatible changes. Results are decoded
 // strictly, so conductor and conductor-idp are upgraded together.
+//
+// Versioning rules: a new operation is additive and keeps the version (an
+// older server answers bad_request "not allowlisted", which a client
+// reports as "conductor-idp is too old for this"); changing the
+// parameters or the result of an existing operation, including adding a
+// field to a result (clients decode strictly), bumps it.
 const ProtocolVersion = 1
 
 // DefaultSocketPath is where `conductor-idp serve` listens for conductor.
@@ -76,6 +82,10 @@ const (
 	OpSettingsGet    Op = "settings.get"
 	OpSettingsUpdate Op = "settings.update"
 
+	// Branding (added in protocol 1 without a bump: additive).
+	OpBrandingGet    Op = "branding.get"
+	OpBrandingUpdate Op = "branding.update"
+
 	OpActivity    Op = "activity.summary"
 	OpAuditList   Op = "audit.list"
 	OpAuditVerify Op = "audit.verify"
@@ -87,7 +97,7 @@ const (
 func (o Op) Mutating() bool {
 	switch o {
 	case OpClientCreate, OpClientUpdate, OpClientRotate, OpClientEnable, OpClientDelete,
-		OpSPCreate, OpSPUpdate, OpSPEnable, OpSPDelete, OpKeysRotate, OpSettingsUpdate:
+		OpSPCreate, OpSPUpdate, OpSPEnable, OpSPDelete, OpKeysRotate, OpSettingsUpdate, OpBrandingUpdate:
 		return true
 	}
 	return false
@@ -192,6 +202,9 @@ var Allowlist = map[Op]func() Params{
 
 	OpSettingsGet:    func() Params { return &NoParams{} },
 	OpSettingsUpdate: func() Params { return &SettingsUpdateParams{} },
+
+	OpBrandingGet:    func() Params { return &NoParams{} },
+	OpBrandingUpdate: func() Params { return &BrandingUpdateParams{} },
 
 	OpActivity:    func() Params { return &ActivityParams{} },
 	OpAuditList:   func() Params { return &AuditListParams{} },

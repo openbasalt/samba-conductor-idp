@@ -9,6 +9,7 @@
 //	conductor-idp mfa reset        remove a user's 2FA (local backend)
 //	conductor-idp audit ...        verify or export the audit log
 //	conductor-idp gen-key FILE     create a master key file (0600)
+//	conductor-idp templates ...    list, show and check the template overrides
 //	conductor-idp check            check the configuration and the directory
 //	conductor-idp version
 package main
@@ -37,6 +38,8 @@ commands:
   mfa reset -user NAME        remove a user's 2FA (local backend)
   audit verify | audit export
   gen-key FILE                write a new 32-byte master key (0600)
+  templates list | templates show NAME | templates check
+                              template overrides of the sign-in pages
   check                       validate the configuration, bind the service account
   version
 
@@ -75,6 +78,8 @@ func main() {
 		err = cmdAudit(ctx, *cfgPath, args[1:])
 	case "gen-key":
 		err = cmdGenKey(args[1:])
+	case "templates":
+		err = cmdTemplates(*cfgPath, args[1:])
 	case "check":
 		err = cmdCheck(ctx, *cfgPath)
 	case "version":

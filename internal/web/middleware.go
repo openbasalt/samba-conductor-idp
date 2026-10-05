@@ -93,7 +93,9 @@ const basePolicy = "default-src 'none'; script-src 'none'; style-src 'self'; img
 // csp builds the page policy: form-action is 'self' plus the origins the
 // page's flow may legitimately continue to. There is no script, except the
 // WebAuthn script carrying the response's nonce on the second-factor page.
-func csp(formTargets []string, nonce string) string {
+// mediaOrigins (branding.allowed_origins, branded pages only) may serve
+// images and fonts; nothing else changes.
+func csp(formTargets []string, nonce string, mediaOrigins ...string) string {
 	fa := "'self'"
 	for _, t := range formTargets {
 		if o := origin(t); o != "" && !strings.Contains(fa, " "+o) {
@@ -104,7 +106,22 @@ func csp(formTargets []string, nonce string) string {
 	if nonce != "" {
 		p = strings.Replace(p, "script-src 'none'", "script-src 'nonce-"+nonce+"'", 1)
 	}
+	if extra := cspSources(mediaOrigins); extra != "" {
+		p = strings.Replace(p, "img-src 'self'", "img-src 'self'"+extra, 1)
+		p = strings.Replace(p, "font-src 'self'", "font-src 'self'"+extra, 1)
+	}
 	return p + "; form-action " + fa
+}
+
+// cspSources renders validated https origins as source expressions.
+func cspSources(origins []string) string {
+	var out string
+	for _, o := range origins {
+		if v := origin(o); v != "" && strings.HasPrefix(v, "https://") {
+			out += " " + v
+		}
+	}
+	return out
 }
 
 // origin returns scheme://host[:port] of a URL, or "" when unusable in a

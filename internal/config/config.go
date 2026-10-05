@@ -18,6 +18,7 @@ import (
 
 	"github.com/BurntSushi/toml"
 	"github.com/openbasalt/samba-conductor-ad/sid"
+	"github.com/openbasalt/samba-conductor-idp/branding"
 )
 
 // DefaultPath is where conductor-idp looks for its configuration.
@@ -55,6 +56,21 @@ type Config struct {
 	UI             UI             `toml:"ui"`
 	SAML           SAML           `toml:"saml"`
 	API            API            `toml:"api"`
+	Branding       Branding       `toml:"branding"`
+}
+
+// Branding configures the level 2 branding: template overrides read from
+// a directory. The level 1 branding (logo, colors, texts) is not in this
+// file: conductor pushes it through the management API.
+type Branding struct {
+	// TemplatesDir holds overrides of the user-facing partials
+	// (header.html, footer.html, signin-box.html) and an optional
+	// custom.css; empty: none. Suggested: /etc/conductor-idp/templates.
+	TemplatesDir string `toml:"templates_dir"`
+	// AllowedOrigins may serve images and fonts to the branded pages
+	// ("https://host[:port]"), added to the CSP's img-src and font-src
+	// there only. Empty: this origin only.
+	AllowedOrigins []string `toml:"allowed_origins"`
 }
 
 // API is the local management API used by conductor's "Single sign-on"
@@ -315,6 +331,12 @@ func Load(path string) (*Config, error) {
 	return c, nil
 }
 
+// AllowedOrigins returns the normalized branding.allowed_origins.
+func (c *Config) AllowedOrigins() []string {
+	o, _ := branding.ParseOrigins(c.Branding.AllowedOrigins)
+	return o
+}
+
 // Default returns the defaults every file starts from.
 func Default() *Config {
 	return &Config{
@@ -440,6 +462,12 @@ func (c *Config) Validate() error {
 	}
 	if c.UI.ProductName == "" || len(c.UI.ProductName) > 64 {
 		bad("ui.product_name must be 1-64 characters")
+	}
+	if c.Branding.TemplatesDir != "" && !filepath.IsAbs(c.Branding.TemplatesDir) {
+		bad("branding.templates_dir must be an absolute path")
+	}
+	if _, err := branding.ParseOrigins(c.Branding.AllowedOrigins); err != nil {
+		bad("branding.allowed_origins: %v", err)
 	}
 	if c.SAML.AssertionMinutes < 1 || c.SAML.AssertionMinutes > 30 {
 		bad("saml.assertion_minutes must be 1-30")

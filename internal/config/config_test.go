@@ -133,3 +133,23 @@ func TestAdminHostCanonical(t *testing.T) {
 		t.Error("foreign host accepted")
 	}
 }
+
+func TestBrandingKeys(t *testing.T) {
+	c, err := Load(write(t, valid+`
+[branding]
+templates_dir = "/etc/conductor-idp/templates"
+allowed_origins = ["https://Fonts.Example.com"]
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Branding.TemplatesDir != "/etc/conductor-idp/templates" || c.AllowedOrigins()[0] != "https://fonts.example.com" {
+		t.Fatalf("%+v", c.Branding)
+	}
+	for _, bad := range []string{`templates_dir = "templates"`, `allowed_origins = ["http://x.example"]`,
+		`allowed_origins = ["https://x.example/fonts"]`} {
+		if _, err := Load(write(t, valid+"\n[branding]\n"+bad+"\n")); err == nil || !strings.Contains(err.Error(), "branding") {
+			t.Errorf("%s: %v", bad, err)
+		}
+	}
+}

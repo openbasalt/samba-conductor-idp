@@ -205,3 +205,27 @@ details pre { margin-top: .5rem; max-height: 24rem; }
 .props dd { margin: 0; overflow-wrap: anywhere; }
 fieldset.field { border: 0; padding: 0; margin: 0 0 1rem; }
 @media (max-width: 560px) { .props { grid-template-columns: 1fr; } .props dd { margin-bottom: .5rem; } }
+
+/* Branding: the generated /branding/theme.css sets the custom properties
+   (--accent, --brand-accent...) and the background image; these rules
+   place the branded blocks. Text from the branding keeps its line breaks. */
+.brand img.logo { height: 32px; width: auto; max-width: 11rem; object-fit: contain; }
+.brand .logo-dark { display: none; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .brand .logo-light { display: none; }
+  :root:not([data-theme="light"]) .brand .logo-dark { display: block; }
+}
+:root[data-theme="dark"] .brand .logo-light { display: none; }
+:root[data-theme="dark"] .brand .logo-dark { display: block; }
+.topbar.branded { border-bottom: 3px solid var(--brand-accent, var(--border)); }
+.brand-notice { background: var(--brand-accent, var(--warn-soft)); color: var(--brand-accent-fg, var(--warn)); border-radius: var(--radius);
+  padding: .65rem .9rem; margin-bottom: 1rem; font-weight: 600; white-space: pre-line; overflow-wrap: anywhere; }
+.brand-text { white-space: pre-line; overflow-wrap: anywhere; }
+.brand-footer { max-width: 40rem; margin: 0 auto .75rem; display: grid; gap: .35rem; }
+.brand-footer p { margin: 0; }
+.brand-links, .brand-support { display: flex; flex-wrap: wrap; justify-content: center; gap: .25rem 1rem; }
+.brand-help { margin-top: 1rem; padding-top: .75rem; border-top: 1px solid var(--border); }
+.brand-help .row { gap: .25rem 1rem; }
+body.brand-bg { background-color: var(--bg); }
+body.brand-bg footer, body.brand-bg .topbar { background: var(--surface); }
+body.brand-bg .card { box-shadow: 0 8px 30px rgb(0 0 0 / 25%); }

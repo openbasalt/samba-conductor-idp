@@ -201,6 +201,24 @@ served.
 - Settings edited there (session lifetimes, the local second-factor
   policy, a consent screen note per language) are stored in the database
   and override the configuration file, whose values remain the defaults.
+- `branding.get` and `branding.update` carry the branding conductor's
+  administrators edit (Branding, below).
+
+## Branding
+
+- The user-facing pages (sign-in, second factor, enrollment, password
+  change, consent, logout, errors) carry the organization's name, logos,
+  favicon, colors, sign-in background image, texts per language, support
+  contact and links, pushed by conductor and kept in the database (they
+  survive restarts and work while conductor is down). The admin pages,
+  the admin listener and the protocol endpoints keep the product look.
+- Colors reach the pages as CSS custom properties in a generated
+  same-origin stylesheet; images are served from this origin with their
+  checked type. The CSP does not change.
+- Template overrides (`branding.templates_dir`) can replace the header,
+  the footer and the sign-in box, within a contract checked at startup and
+  by `conductor-idp templates check`. Details: [branding.md](branding.md)
+  and decision D15.
 
 ## Sessions and web hardening
 
