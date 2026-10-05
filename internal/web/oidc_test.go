@@ -520,3 +520,26 @@ func TestEndSession(t *testing.T) {
 		t.Fatalf("session survived logout: %s", loc)
 	}
 }
+
+// TestTokenResponsesNotCacheable: every token endpoint answer (also a
+// refresh and an error) carries Cache-Control: no-store (RFC 6749 5.1).
+func TestTokenResponsesNotCacheable(t *testing.T) {
+	h := newHarness(t, harnessOpts{})
+	c := h.client(registry.ClientInput{Scopes: []string{"offline_access"}})
+	for _, form := range []url.Values{
+		{"grant_type": {"refresh_token"}, "refresh_token": {"cidp_rt_unknown"}},
+		{"grant_type": {"authorization_code"}, "code": {"nope"}, "redirect_uri": {rpRedirect}, "code_verifier": {"x"}},
+	} {
+		req, _ := http.NewRequest(http.MethodPost, h.ts.URL+"/oauth/token", strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.SetBasicAuth(c.id, c.secret)
+		resp, err := h.ts.Client().Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = resp.Body.Close()
+		if resp.Header.Get("Cache-Control") != "no-store" {
+			t.Fatalf("%s: Cache-Control %q", form.Get("grant_type"), resp.Header.Get("Cache-Control"))
+		}
+	}
+}

@@ -99,7 +99,11 @@ func (s *Server) routes() {
 	s.mux.Handle("GET "+oidcp.Discovery, s.apiHeaders(oidcp.DiscoveryHandler(s.provider)))
 	s.mux.Handle(oidcp.CallbackPath, s.limited(http.HandlerFunc(s.handleCallback)))
 	for _, p := range []string{oidcp.AuthorizePath, oidcp.TokenPath, oidcp.UserinfoPath, oidcp.RevokePath, oidcp.EndSession, oidcp.KeysPath} {
-		s.mux.Handle(p, s.limited(s.apiHeaders(s.withRequest(s.provider))))
+		h := s.apiHeaders(s.withRequest(s.provider))
+		if p == oidcp.TokenPath || p == oidcp.UserinfoPath {
+			h = noStore(h)
+		}
+		s.mux.Handle(p, s.limited(h))
 	}
 }
 
@@ -131,6 +135,17 @@ func (s *Server) limited(h http.Handler) http.Handler {
 			http.Error(w, "too many requests", http.StatusTooManyRequests)
 			return
 		}
+		h.ServeHTTP(w, r)
+	})
+}
+
+// noStore marks responses that carry tokens or user data as not
+// cacheable (RFC 6749 5.1): the library sets it for some grants only (the
+// OpenID conformance suite found a refresh response without it).
+func noStore(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("Pragma", "no-cache")
 		h.ServeHTTP(w, r)
 	})
 }
