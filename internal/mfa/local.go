@@ -37,7 +37,7 @@ func (l *Local) State(ctx context.Context, u *directory.User) (State, error) {
 	if errors.Is(err, store.ErrNotFound) {
 		return State{}, nil
 	}
-	return State{Enrolled: err == nil}, err
+	return State{Enrolled: err == nil, TOTP: err == nil}, err
 }
 
 // Verify implements Backend: a TOTP code (each step accepted once) or an

@@ -81,7 +81,7 @@ func (c *Conductor) State(ctx context.Context, u *directory.User) (State, error)
 	if err != nil {
 		return State{}, err
 	}
-	return State{Enrolled: a.Enrolled, Keys: a.Keys, Shared: true, Required: a.Required, Policy: a.Policy, KeyRequired: a.KeyRequired}, nil
+	return State{Enrolled: a.Enrolled, TOTP: a.TOTP, Keys: a.Keys, Shared: true, Required: a.Required, Policy: a.Policy, KeyRequired: a.KeyRequired}, nil
 }
 
 // Verify implements Backend.

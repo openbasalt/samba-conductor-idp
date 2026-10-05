@@ -33,6 +33,9 @@ type Result struct {
 // State is a user's second factor as the backend sees it.
 type State struct {
 	Enrolled bool
+	// TOTP: an authenticator app is enrolled (else only security keys and
+	// recovery codes).
+	TOTP bool
 	// Keys is the number of security keys (conductor backend only).
 	Keys int
 	// Shared: the policy comes from conductor (Required and Policy are

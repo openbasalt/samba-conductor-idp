@@ -526,6 +526,8 @@ func (s *Server) mfaData(rc *reqCtx, errMsg string) map[string]any {
 		return d
 	}
 	d["KeyRequired"] = st.KeyRequired
+	// Without an authenticator app, the only code is a recovery code.
+	d["RecoveryOnly"] = st.KeyRequired || (st.Enrolled && !st.TOTP)
 	if st.Keys == 0 {
 		return d
 	}

@@ -12,14 +12,14 @@
     <p class="hint" data-webauthn-unsupported hidden>{{t "keys.unsupported"}}</p>
     <noscript><p class="hint">{{t "keys.noscript"}}</p></noscript>
   </form>
-  <h2>{{if .D.KeyRequired}}{{t "mfa.or_recovery"}}{{else}}{{t "mfa.or_code"}}{{end}}</h2>
+  <h2>{{if .D.RecoveryOnly}}{{t "mfa.or_recovery"}}{{else}}{{t "mfa.or_code"}}{{end}}</h2>
   {{else}}<p>{{if .D.KeyRequired}}{{t "mfa.key_required_intro"}}{{else if .D.StepUp}}{{t "mfa.step_up"}}{{else}}{{t "mfa.intro"}}{{end}}</p>{{end}}
   <form method="post" action="/login/2fa" autocomplete="off">
     {{template "csrf" .}}{{template "cont" .}}
     <div class="field">
-      <label for="code">{{if .D.KeyRequired}}{{t "mfa.recovery_code"}}{{else}}{{t "mfa.code"}}{{end}}</label>
+      <label for="code">{{if .D.RecoveryOnly}}{{t "mfa.recovery_code"}}{{else}}{{t "mfa.code"}}{{end}}</label>
       <input id="code" name="code" type="text" inputmode="text" autocomplete="one-time-code" autocapitalize="none" spellcheck="false" required maxlength="16" data-e2e="mfa-input-code">
-      <span class="hint">{{if .D.KeyRequired}}{{t "mfa.recovery_hint"}}{{else}}{{t "mfa.code_hint"}}{{end}}</span>
+      <span class="hint">{{if .D.RecoveryOnly}}{{t "mfa.recovery_hint"}}{{else}}{{t "mfa.code_hint"}}{{end}}</span>
     </div>
     <button class="btn{{if not .D.KeyOptions}} btn-primary{{end}} btn-block" type="submit" data-e2e="mfa-btn-submit">{{t "mfa.submit"}}</button>
   </form>
