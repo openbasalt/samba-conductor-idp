@@ -54,6 +54,11 @@ Write a new 32-byte master key (mode 0600).
 .B check
 Validate the configuration and bind the service account.
 .TP
+.B healthcheck
+Exit 0 when /healthz answers over TLS pinned to the IdP's own certificate,
+a separate admin listener answers, and the management API socket exists
+(container healthchecks).
+.TP
 .B version
 Print the version.
 .SH FILES

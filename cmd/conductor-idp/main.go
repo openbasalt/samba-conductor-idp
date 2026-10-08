@@ -11,6 +11,7 @@
 //	conductor-idp gen-key FILE     create a master key file (0600)
 //	conductor-idp templates ...    list, show and check the template overrides
 //	conductor-idp check            check the configuration and the directory
+//	conductor-idp healthcheck      container healthcheck (pinned TLS, /healthz, API socket)
 //	conductor-idp version
 package main
 
@@ -41,6 +42,8 @@ commands:
   templates list | templates show NAME | templates check
                               template overrides of the sign-in pages
   check                       validate the configuration, bind the service account
+  healthcheck                 exit 0 when the listeners answer with the IdP's own
+                              certificate and /healthz is ok (containers)
   version
 
 Run "conductor-idp COMMAND -h" for a command's flags.`)
@@ -82,6 +85,8 @@ func main() {
 		err = cmdTemplates(*cfgPath, args[1:])
 	case "check":
 		err = cmdCheck(ctx, *cfgPath)
+	case "healthcheck":
+		err = cmdHealthcheck(ctx, *cfgPath)
 	case "version":
 		fmt.Println("conductor-idp", version)
 	case "help", "-h", "--help":
