@@ -42,7 +42,7 @@ BUILD="$BASE/build"
 IDPLAB="$BASE/src/conductor-idp/scripts/lab/idp-lab.sh"
 DC1=10.96.0.10
 HOSTMAP="dc1.lab.conductor.test:$DC1"
-IMG=mcr.microsoft.com/playwright:v1.62.1-noble
+IMG=mcr.microsoft.com/playwright:v1.63.0-noble
 cleanup() {
   docker rm -f conductor-idplab-rp conductor-idplab-sp conductor-idplab-grafana >/dev/null 2>&1 || true
   rm -f "${envf:-}" "${rpenv:-}" "${grafenv:-}"
