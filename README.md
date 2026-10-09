@@ -4,7 +4,10 @@ OpenID Connect provider and SAML 2.0 identity provider backed by Samba AD.
 Part of Samba Conductor v2; design in [docs/design.md](docs/design.md)
 and the family's [architecture.md](https://github.com/openbasalt/samba-conductor-docs/blob/main/architecture.md).
 
-Status: pre-release, no tagged version yet. OIDC and SAML validated end to end in
+Container image: `docker.io/openbasalt/samba-conductor-idp`, tags `0.1.0` and `latest`, also on `ghcr.io/openbasalt` with the same digests, see [containers.md](https://github.com/openbasalt/samba-conductor-docs/blob/main/containers.md).
+
+Status: 0.1.0 released (signed GitHub release `v0.1.0`, APT packages
+`0.1.0-1`, container image above). OIDC and SAML validated end to end in
 an isolated two-DC lab with an independent OIDC client, Grafana and a
 crewjam SAML SP, desktop and mobile ([`docs/usage-p4.md`](docs/usage-p4.md)),
 and managed from conductor's Single sign-on section with single logout and
@@ -58,8 +61,14 @@ the deliberate deviations (PKCE for every client, ES256 only,
 - Security: no JavaScript except the WebAuthn script on the second-factor
   page (CSP nonce + SRI; `script-src 'none'` everywhere else, form-action
   limited to the flow's own targets), CSRF tokens + Fetch metadata,
-  `__Host-` cookies, rate limits per address and per account, hash-chained
-  audit log, systemd sandbox, i18n en + pt-BR, `data-e2e` everywhere.
+  `__Host-` cookies, rate limits per address and per account, audit log,
+  systemd sandbox, i18n en + pt-BR, `data-e2e` everywhere.
+- Audit log: SQLite table the service only appends to, with a hash chain
+  (`conductor-idp audit verify`) that detects accidental or partial edits. It
+  is not keyed or anchored outside the database, so it does not protect
+  against someone with write access to the database file. Protect the
+  database file and ship the exported log off the host if you need tamper
+  evidence.
 
 ## Documentation
 
