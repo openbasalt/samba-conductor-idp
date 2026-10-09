@@ -612,7 +612,7 @@ func (s *Server) handleMFAKey(rc *reqCtx) {
 		s.mfaRefused(rc, c, sam, "security key")
 		return
 	}
-	s.mfaPassed(rc, c, sam, "security key backend="+s.mfa.Name())
+	s.mfaPassed(rc, c, sam, amrHWK, "security key backend="+s.mfa.Name())
 }
 
 // mfaRefused counts a wrong second factor and ends the sign-in after
@@ -637,11 +637,13 @@ func (s *Server) mfaRefused(rc *reqCtx, c cont, sam, what string) {
 	rc.render(http.StatusUnauthorized, "login_2fa", s.mfaData(rc, rc.T(key)))
 }
 
-// mfaPassed completes the second factor: new session ID, full stage.
-func (s *Server) mfaPassed(rc *reqCtx, c cont, sam, detail string) {
+// mfaPassed completes the second factor (method: amrOTP or amrHWK): new
+// session ID, full stage.
+func (s *Server) mfaPassed(rc *reqCtx, c cont, sam, method, detail string) {
 	sess := rc.sess
 	sess.mu.Lock()
 	sess.mfaVerified = true
+	sess.mfaMethod = method
 	sess.mfaFailures = 0
 	sess.mu.Unlock()
 	tok := s.sess.rotate(sess, stageFull)
@@ -702,7 +704,7 @@ func (s *Server) handleMFA(rc *reqCtx) {
 		detail = "recovery code"
 		rc.flashOK("mfa.recovery_used")
 	}
-	s.mfaPassed(rc, c, sam, detail+" backend="+s.mfa.Name())
+	s.mfaPassed(rc, c, sam, amrOTP, detail+" backend="+s.mfa.Name())
 }
 
 // ---- enrollment (local backend) ----
@@ -839,6 +841,7 @@ func (s *Server) handleEnroll(rc *reqCtx) {
 	sess.enrollSealed = nil
 	sess.enrollLink = ""
 	sess.mfaVerified = true
+	sess.mfaMethod = amrOTP
 	sess.recoveryCodes = codes
 	sess.mu.Unlock()
 	tok := s.sess.rotate(sess, stageFull)

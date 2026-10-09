@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -72,6 +73,9 @@ func TestSharedPolicyFromConductor(t *testing.T) {
 	b.submit("/login/2fa", url.Values{"code": {"246810"}})
 	b.get("/")
 	b.mustContain(`data-e2e="nav-btn-signout"`)
+	if amr := b.amrOfNewCode(); !slices.Equal(amr, []string{"pwd", "otp", "mfa"}) {
+		t.Fatalf("amr after a TOTP code: %v", amr)
+	}
 	// Conductor's policy is "off" for bob: not asked although enrolled.
 	b2 := h.browser()
 	b2.get("/login")
@@ -104,6 +108,10 @@ func TestSecurityKeyThroughConductor(t *testing.T) {
 	b.submit("/login/2fa/key", url.Values{"response": {`{"ok":true}`}})
 	b.get("/")
 	b.mustContain(`data-e2e="nav-btn-signout"`)
+	// The ID token says a security key was used, not a one-time code.
+	if amr := b.amrOfNewCode(); !slices.Equal(amr, []string{"pwd", "hwk", "mfa"}) {
+		t.Fatalf("amr after a security key: %v", amr)
+	}
 	// Each attempt went to conductor with its own ceremony.
 	if f.finished != 2 {
 		t.Fatalf("finished %d", f.finished)
@@ -136,4 +144,34 @@ func TestSettingsApplied(t *testing.T) {
 	h.clock.Advance(6 * time.Minute)
 	b.get("/")
 	b.mustContain(`data-e2e="signin-input-username"`)
+}
+
+// amrOfNewCode runs an authorization request in a signed-in browser and
+// returns the amr claim of the ID token it yields.
+func (b *browser) amrOfNewCode() []string {
+	b.h.t.Helper()
+	c := b.h.client(registry.ClientInput{Scopes: []string{"profile"}})
+	verifier := b.authorize(c, "openid profile")
+	b.submit("/consent", url.Values{"decision": {"allow"}})
+	tr := b.h.exchange(c, b.code(), verifier)
+	if tr.Status != http.StatusOK {
+		b.h.t.Fatalf("token response %+v", tr)
+	}
+	return toStrings(b.h.idClaims(tr.IDToken)["amr"])
+}
+
+func TestSessionAMR(t *testing.T) {
+	for name, tc := range map[string]struct {
+		sess *Session
+		want []string
+	}{
+		"password only": {&Session{}, []string{"pwd"}},
+		"totp":          {&Session{mfaVerified: true, mfaMethod: amrOTP}, []string{"pwd", "otp", "mfa"}},
+		"security key":  {&Session{mfaVerified: true, mfaMethod: amrHWK}, []string{"pwd", "hwk", "mfa"}},
+		"method unset":  {&Session{mfaVerified: true}, []string{"pwd", "otp", "mfa"}},
+	} {
+		if got := tc.sess.amr(); !slices.Equal(got, tc.want) {
+			t.Errorf("%s: amr %v, want %v", name, got, tc.want)
+		}
+	}
 }
