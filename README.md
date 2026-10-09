@@ -4,6 +4,8 @@ OpenID Connect provider and SAML 2.0 identity provider backed by Samba AD.
 Part of Samba Conductor v2; design in [docs/design.md](docs/design.md)
 and the family's [architecture.md](https://github.com/openbasalt/samba-conductor-docs/blob/main/architecture.md).
 
+Container image: `docker.io/openbasalt/samba-conductor-idp` (also on `ghcr.io/openbasalt`), see [containers.md](https://github.com/openbasalt/samba-conductor-docs/blob/main/containers.md).
+
 Status: pre-release, no tagged version yet. OIDC and SAML validated end to end in
 an isolated two-DC lab with an independent OIDC client, Grafana and a
 crewjam SAML SP, desktop and mobile ([`docs/usage-p4.md`](docs/usage-p4.md)),
