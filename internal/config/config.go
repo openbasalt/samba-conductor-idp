@@ -103,7 +103,8 @@ type Server struct {
 	// BehindProxy serves plain HTTP for a TLS-terminating reverse proxy on
 	// the same host; only allowed on a loopback address.
 	BehindProxy bool `toml:"behind_proxy"`
-	// TrustedProxies whose X-Forwarded-For is believed (CIDRs).
+	// TrustedProxies whose X-Forwarded-For is believed (CIDRs). Required
+	// with BehindProxy, refused without it.
 	TrustedProxies []string `toml:"trusted_proxies"`
 
 	// AdminListen moves the admin pages off the main listener: empty
@@ -386,6 +387,11 @@ func (c *Config) Validate() error {
 	if len(c.Server.TrustedProxies) > 0 && !c.Server.BehindProxy {
 		bad("server.trusted_proxies only makes sense with server.behind_proxy")
 	}
+	if c.Server.BehindProxy && len(c.Server.TrustedProxies) == 0 {
+		// Without it every request seems to come from the proxy: one rate
+		// limit bucket for all clients and the proxy's address in the audit.
+		bad(`server.trusted_proxies is required with server.behind_proxy (the proxy's addresses, e.g. ["127.0.0.1/32", "::1/128"])`)
+	}
 	errs = append(errs, c.validateAdmin()...)
 
 	if c.Domain.Realm == "" || strings.ContainsAny(c.Domain.Realm, " /\\") {
@@ -530,6 +536,9 @@ func (c *Config) validateAdmin() []error {
 	}
 	if len(s.AdminTrustedProxies) > 0 && !s.AdminBehindProxy {
 		bad("server.admin_trusted_proxies only makes sense with server.admin_behind_proxy")
+	}
+	if s.AdminBehindProxy && len(s.AdminTrustedProxies) == 0 {
+		bad(`server.admin_trusted_proxies is required with server.admin_behind_proxy (the proxy's addresses, e.g. ["127.0.0.1/32", "::1/128"])`)
 	}
 	if s.AdminURL != "" {
 		u, err := url.Parse(s.AdminURL)

@@ -82,6 +82,7 @@ type Session struct {
 	userAgent string
 
 	mfaVerified bool
+	mfaMethod   string // second factor that passed: amrOTP or amrHWK
 	admin       bool
 	adminAt     time.Time
 
@@ -125,14 +126,25 @@ func (s *Session) snapshotStage() stage {
 	return s.stage
 }
 
-// amr is the authentication methods reference of this sign-in (RFC 8176).
+// Second factor methods, as RFC 8176 names them.
+const (
+	amrOTP = "otp" // TOTP code or recovery code
+	amrHWK = "hwk" // security key (proof of possession of a hardware key)
+)
+
+// amr is the authentication methods reference of this sign-in (RFC 8176):
+// the password, and the second factor that was actually used.
 func (s *Session) amr() []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.mfaVerified {
-		return []string{"pwd", "otp", "mfa"}
+	if !s.mfaVerified {
+		return []string{"pwd"}
 	}
-	return []string{"pwd"}
+	method := s.mfaMethod
+	if method == "" {
+		method = amrOTP
+	}
+	return []string{"pwd", method, "mfa"}
 }
 
 // sessions is the in-memory session table: a restart signs everyone out

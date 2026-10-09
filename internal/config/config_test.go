@@ -65,7 +65,7 @@ func TestExampleLoads(t *testing.T) {
 }
 
 func TestAdminListener(t *testing.T) {
-	behindProxy := strings.Replace(strings.Replace(valid, `tls_cert = "/etc/conductor-idp/tls/cert.pem"`, "behind_proxy = true", 1),
+	behindProxy := strings.Replace(strings.Replace(valid, `tls_cert = "/etc/conductor-idp/tls/cert.pem"`, "behind_proxy = true\ntrusted_proxies = [\"127.0.0.1/32\", \"::1/128\"]", 1),
 		`tls_key = "/etc/conductor-idp/tls/key.pem"`, "", 1)
 	behindProxy = strings.Replace(behindProxy, `listen = ":9443"`, `listen = "127.0.0.1:9080"`, 1)
 	server := func(base, extra string) string { return strings.Replace(base, "[domain]", extra+"\n[domain]", 1) }
@@ -111,6 +111,8 @@ func TestAdminListener(t *testing.T) {
 		"http admin url":            {server(valid, "admin_listen = \"10.0.0.5:9444\"\nadmin_url = \"http://a.example.com\""), "admin_url must be https"},
 		"admin url with path":       {server(valid, "admin_listen = \"10.0.0.5:9444\"\nadmin_url = \"https://a.example.com/admin\""), "admin_url must be https"},
 		"admin url = issuer origin": {server(valid, "admin_listen = \"10.0.0.5:9444\"\nadmin_url = \"https://idp.example.com:443\""), "another origin"},
+		"proxy w/o trusted":         {strings.Replace(behindProxy, "trusted_proxies = [\"127.0.0.1/32\", \"::1/128\"]\n", "", 1), "server.trusted_proxies is required"},
+		"admin proxy w/o trusted":   {server(valid, "admin_listen = \"127.0.0.1:9444\"\nadmin_behind_proxy = true\nadmin_url = \"https://a.example.com\""), "admin_trusted_proxies is required"},
 	} {
 		_, err := Load(write(t, tc.body))
 		if err == nil || !strings.Contains(err.Error(), tc.want) {

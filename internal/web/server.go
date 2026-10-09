@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/netip"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -157,6 +158,11 @@ func New(o Options) (*Server, error) {
 		return nil, err
 	}
 	s.behindProxy = s.cfg.Server.BehindProxy
+	if s.behindProxy {
+		// Say whose X-Forwarded-For is believed: rate limits and the audit
+		// log use the client address it carries.
+		s.log.Info("behind a reverse proxy", "listener", "main", "trusted_proxies", strings.Join(s.cfg.Server.TrustedProxies, ","))
+	}
 	for _, g := range s.cfg.Roles.AdminGroups {
 		v, err := sid.Parse(g)
 		if err != nil {
@@ -234,6 +240,9 @@ func (s *Server) adminServer() (*Server, error) {
 	var err error
 	if a.trusted, err = parsePrefixes(s.cfg.Server.AdminTrustedProxies); err != nil {
 		return nil, err
+	}
+	if a.behindProxy {
+		s.log.Info("behind a reverse proxy", "listener", "admin", "trusted_proxies", strings.Join(s.cfg.Server.AdminTrustedProxies, ","))
 	}
 	a.host = s.cfg.AdminHost()
 	a.mux = http.NewServeMux()

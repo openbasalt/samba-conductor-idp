@@ -103,8 +103,11 @@ The issuer is the public `https://host[:port]` without a path. Relying
 parties pin it, and the SAML entity ID is `<issuer>/saml/metadata`.
 
 Behind a reverse proxy: `listen = "127.0.0.1:9080"`, `behind_proxy = true`,
-`trusted_proxies = ["127.0.0.1/32"]`; the proxy terminates TLS for the
-issuer's host name.
+`trusted_proxies = ["127.0.0.1/32", "::1/128"]`; the proxy terminates TLS for
+the issuer's host name. `trusted_proxies` is required with `behind_proxy`
+(and `admin_trusted_proxies` with `admin_behind_proxy`): rate limits and the
+audit log use the client address from the `X-Forwarded-For` header the proxy
+adds, and only requests from those addresses are believed.
 
 ## 5. Service
 
@@ -260,7 +263,7 @@ What changes:
   admin listener answers only for its host name. Without it the default is
   the issuer's host name with the admin port. Behind a proxy of its own
   (`admin_listen = "127.0.0.1:9081"`, `admin_behind_proxy = true`,
-  `admin_trusted_proxies`), `admin_url` is required.
+  `admin_trusted_proxies`, which is then required), `admin_url` is required.
 - Administrator enrollment links (`cidp enroll-link`, or the admin pages)
   point at `admin_url` and work only there: open them over the VPN. The
   main listener refuses them. With `admin_listen = "off"` they stay on the
