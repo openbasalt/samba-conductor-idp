@@ -1,6 +1,6 @@
 module github.com/openbasalt/samba-conductor-idp
 
-go 1.27.0
+go 1.27.2
 
 // Sibling modules of the Samba Conductor family are pinned by commit
 // (pseudo-versions until they are tagged). A go.work in the family
@@ -13,6 +13,7 @@ require (
 	github.com/go-jose/go-jose/v4 v4.1.5
 	github.com/go-ldap/ldap/v3 v3.4.14
 	github.com/google/uuid v1.6.0
+	github.com/mattermost/xml-roundtrip-validator v0.1.0
 	github.com/openbasalt/samba-conductor-ad v0.0.0-20261004043531-75ce88dcaaea
 	github.com/russellhaering/goxmldsig v1.6.1
 	github.com/zitadel/oidc/v3 v3.51.11
@@ -35,7 +36,6 @@ require (
 	github.com/golang-jwt/jwt/v4 v4.5.2 // indirect
 	github.com/gorilla/securecookie v1.1.2 // indirect
 	github.com/jonboulle/clockwork v0.5.0 // indirect
-	github.com/mattermost/xml-roundtrip-validator v0.1.0 // indirect
 	github.com/mattn/go-isatty v0.0.24 // indirect
 	github.com/muhlemmer/gu v0.3.1 // indirect
 	github.com/muhlemmer/httpforwarded v0.1.0 // indirect
@@ -48,7 +48,7 @@ require (
 	go.opentelemetry.io/otel/metric v1.46.0 // indirect
 	go.opentelemetry.io/otel/trace v1.46.0 // indirect
 	golang.org/x/crypto v0.57.0 // indirect
-	golang.org/x/net v0.58.0 // indirect
+	golang.org/x/net v0.60.0 // indirect
 	golang.org/x/oauth2 v0.37.0 // indirect
 	golang.org/x/sys v0.48.0 // indirect
 	golang.org/x/text v0.42.0 // indirect
