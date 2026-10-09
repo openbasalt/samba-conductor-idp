@@ -10,7 +10,10 @@ issuer = "https://idp.example.com"
 listen = ":9443"
 tls_cert = "/etc/conductor-idp/tls/cert.pem"
 tls_key = "/etc/conductor-idp/tls/key.pem"
-# Or behind a TLS reverse proxy on the same host (loopback only):
+# Or behind a TLS reverse proxy on the same host (loopback only).
+# trusted_proxies is required with behind_proxy: the proxy's addresses,
+# whose X-Forwarded-For gives the client address used by rate limits and
+# the audit log.
 # listen = "127.0.0.1:9080"
 # behind_proxy = true
 # trusted_proxies = ["127.0.0.1/32", "::1/128"]
@@ -30,7 +33,7 @@ tls_key = "/etc/conductor-idp/tls/key.pem"
 # name with admin_listen's port.
 # admin_url = "https://idp-admin.example.com:9444"
 # Or behind a TLS reverse proxy on the same host (loopback only;
-# admin_url is then required):
+# admin_url and admin_trusted_proxies are then required):
 # admin_listen = "127.0.0.1:9081"
 # admin_behind_proxy = true
 # admin_trusted_proxies = ["127.0.0.1/32", "::1/128"]
