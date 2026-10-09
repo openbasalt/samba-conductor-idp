@@ -14,7 +14,7 @@ require (
 	github.com/go-ldap/ldap/v3 v3.4.14
 	github.com/google/uuid v1.6.0
 	github.com/mattermost/xml-roundtrip-validator v0.1.0
-	github.com/openbasalt/samba-conductor-ad v0.0.0-20261004043531-75ce88dcaaea
+	github.com/openbasalt/samba-conductor-ad v0.0.0-20261009012208-17469fcb3764
 	github.com/russellhaering/goxmldsig v1.6.1
 	github.com/zitadel/oidc/v3 v3.51.11
 	modernc.org/sqlite v1.60.1
@@ -30,7 +30,7 @@ require (
 	github.com/go-chi/chi/v5 v5.3.2 // indirect
 	github.com/go-crypt/x v0.4.12 // indirect
 	github.com/go-krb5/krb5 v0.1.0 // indirect
-	github.com/go-krb5/x v0.3.2 // indirect
+	github.com/go-krb5/x v0.4.1 // indirect
 	github.com/go-logr/logr v1.4.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/golang-jwt/jwt/v4 v4.5.2 // indirect
@@ -48,7 +48,6 @@ require (
 	go.opentelemetry.io/otel/metric v1.46.0 // indirect
 	go.opentelemetry.io/otel/trace v1.46.0 // indirect
 	golang.org/x/crypto v0.57.0 // indirect
-	golang.org/x/net v0.60.0 // indirect
 	golang.org/x/oauth2 v0.37.0 // indirect
 	golang.org/x/sys v0.48.0 // indirect
 	golang.org/x/text v0.42.0 // indirect
