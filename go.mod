@@ -16,7 +16,7 @@ require (
 	github.com/mattermost/xml-roundtrip-validator v0.1.0
 	github.com/openbasalt/samba-conductor-ad v0.0.0-20261009012208-17469fcb3764
 	github.com/russellhaering/goxmldsig v1.6.1
-	github.com/zitadel/oidc/v3 v3.51.11
+	github.com/zitadel/oidc/v3 v3.51.13
 	modernc.org/sqlite v1.60.1
 	rsc.io/qr v0.2.0
 )
