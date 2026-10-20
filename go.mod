@@ -10,13 +10,13 @@ require (
 	github.com/BurntSushi/toml v1.6.0
 	github.com/beevik/etree v1.8.1
 	github.com/crewjam/saml v0.5.1
-	github.com/go-jose/go-jose/v4 v4.1.5
+	github.com/go-jose/go-jose/v4 v4.1.6
 	github.com/go-ldap/ldap/v3 v3.4.15
 	github.com/google/uuid v1.6.0
 	github.com/mattermost/xml-roundtrip-validator v0.1.0
 	github.com/openbasalt/samba-conductor-ad v0.0.0-20261009012208-17469fcb3764
 	github.com/russellhaering/goxmldsig v1.6.1
-	github.com/zitadel/oidc/v3 v3.51.13
+	github.com/zitadel/oidc/v3 v3.51.14
 	modernc.org/sqlite v1.60.1
 	rsc.io/qr v0.2.0
 )
