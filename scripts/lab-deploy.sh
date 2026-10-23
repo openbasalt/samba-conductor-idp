@@ -20,7 +20,7 @@ ssh -o BatchMode=yes "$LAB_HOST" "cd conductor-idplab/src && bash -s -- ad condu
 ssh -o BatchMode=yes "$LAB_HOST" bash -s -- "$VERSION" "${1:-}" <<'REMOTE'
 set -euo pipefail
 version="$1" snap="${2:-}"
-export GOWORK="$HOME/conductor-idplab/src/go.work" GOTOOLCHAIN=go1.27.0 CGO_ENABLED=0
+export GOWORK="$HOME/conductor-idplab/src/go.work" GOTOOLCHAIN=go1.27.3 CGO_ENABLED=0
 cd ~/conductor-idplab/src/conductor-idp
 out=~/conductor-idplab/build
 mkdir -p "$out"
