@@ -19,7 +19,7 @@ GOVULNCHECK := $(TOOLS_DIR)/govulncheck-$(GOVULNCHECK_VERSION)
 VERSION ?= $(shell git describe --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -s -w -X main.version=$(VERSION)
 
-.PHONY: build test check fmt vet staticcheck vulncheck tools package lintian rpmlint
+.PHONY: build test check fmt vet staticcheck vulncheck examples tools package lintian rpmlint
 
 build:
 	mkdir -p bin
@@ -28,7 +28,7 @@ build:
 test:
 	go test -race ./...
 
-check: fmt vet staticcheck vulncheck test
+check: fmt vet staticcheck vulncheck test examples
 
 fmt:
 	@out="$$(gofmt -l .)"; if [ -n "$$out" ]; then echo "gofmt needed:"; echo "$$out"; exit 1; fi
@@ -41,6 +41,16 @@ staticcheck: tools
 
 vulncheck: tools
 	$(GOVULNCHECK) ./...
+
+# cmd/example-sp is a module of its own (lab-only SAML service provider,
+# never packaged; docs/decisions.md D16): vet, staticcheck and build it
+# here. It is not run through govulncheck on purpose: it is an SP and calls
+# crewjam/saml's assertion parsing, which GO-2026-6909 affects and which
+# the idp module never runs; the idp module's own scan above stays strict.
+# GOWORK=off always: the example module is not part of the family go.work.
+EXAMPLE_SP := cmd/example-sp
+examples: tools
+	cd $(EXAMPLE_SP) && export GOWORK=off && go vet ./... && $(STATICCHECK) ./... && go build -o /dev/null .
 
 tools: $(STATICCHECK) $(GOVULNCHECK)
 
