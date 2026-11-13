@@ -98,7 +98,7 @@ is worthless. SAML pending requests are bound the same way.
 - The SSO session is server-side in memory (a restart signs users out of
   the idp, not out of relying parties), idle 60 min, absolute 8 h, new ID
   after the second factor. The idp keeps no user credential: the password
-  is verified with Kerberos (or simple bind fallback, see D16) and
+  is verified with Kerberos (or simple bind fallback, see D17) and
   forgotten.
 - `__Host-idp-session` is SameSite=Lax, not Strict: relying parties
   send the browser here through cross-site redirects, and a Strict cookie
