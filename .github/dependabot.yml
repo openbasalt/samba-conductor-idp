@@ -10,6 +10,14 @@ updates:
     groups:
       go-modules:
         patterns: ["*"]
+  - package-ecosystem: gomod
+    # The lab-only example SAML SP, a module of its own (docs/decisions.md D16).
+    directory: /cmd/example-sp
+    schedule:
+      interval: weekly
+    groups:
+      example-sp:
+        patterns: ["*"]
   - package-ecosystem: github-actions
     directory: /
     schedule:

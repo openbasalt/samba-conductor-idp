@@ -411,7 +411,43 @@ never do.
 - The consent note stays a setting (D12), edited with the other single
   sign-on settings; conductor's Branding page shows it and links there.
 
-## D16. Password verification proves the KDC (2026-11-13)
+## D16. GO-2026-6909 (crewjam/saml assertion parsing) and the example SP module (2026-11-13)
+
+GO-2026-6909 affects every crewjam/saml release (no fixed version) in the
+service-provider side of the library: `ServiceProvider.ParseResponse`,
+`ParseXMLResponse`, `ParseXMLArtifactResponse` and `validateAssertion`
+panic on a signed assertion without `<saml:Issuer>`, and `Subject.NameID`
+is matched in any XML namespace, so a signed assertion can carry a spoofed
+NameID.
+
+- conductor-idp is the identity provider. It builds and signs assertions
+  and never parses or validates one it receives: no code outside tests
+  calls those functions, and the `Subject.NameID` it reads back
+  (`samlidp.finish`, for the single logout participant) is the one it has
+  just built itself. The messages it does parse from service providers are
+  AuthnRequests (D7) and logout messages (D11), which the advisory does
+  not cover.
+- govulncheck reported the advisory for the idp only because
+  `cmd/example-sp`, the lab's test SP built on crewjam `samlsp`, was in the
+  same module: its `samlsp.Middleware` is an `http.Handler`, so the call
+  graph of the whole module let `http.ServeMux.ServeHTTP` in the idp's
+  server reach `ServiceProvider.ParseResponse`. Scanning the idp's own
+  packages without the example SP finds no reachable vulnerable symbol.
+- `cmd/example-sp` is now a Go module of its own
+  (`github.com/openbasalt/samba-conductor-idp/cmd/example-sp`). It is a
+  lab tool, never packaged, and talks only to the lab idp. The idp
+  module's govulncheck gate stays unchanged and strict (any finding
+  fails); `make check` vets, staticchecks and builds the example module
+  but does not run govulncheck on it, since it is an SP and does call the
+  affected functions. Tests in `internal/web` use `ServiceProvider` as an
+  independent SP to check the idp's responses; they parse only responses
+  the idp under test produced.
+- Revisit when crewjam/saml publishes a fixed release (raise it in both
+  modules), or before the idp ever consumes assertions from another
+  identity provider (federation or SAML-to-OIDC bridging): that code must
+  not use the affected functions while the advisory is open.
+
+## D17. Password verification proves the KDC (2026-11-13)
 
 - An AS exchange alone does not prove a password: Kerberos does not
   authenticate the KDC to the client, so whoever answers in its place (on
