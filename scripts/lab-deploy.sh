@@ -24,9 +24,12 @@ export GOWORK="$HOME/conductor-idplab/src/go.work" GOTOOLCHAIN=go1.27.4 CGO_ENAB
 cd ~/conductor-idplab/src/conductor-idp
 out=~/conductor-idplab/build
 mkdir -p "$out"
-for cmd in conductor-idp example-rp example-sp; do
+for cmd in conductor-idp example-rp; do
   go build -trimpath -ldflags "-s -w -X main.version=$version" -o "$out/$cmd" "./cmd/$cmd"
 done
+# example-sp is a module of its own, outside the workspace (public
+# dependencies only).
+( cd cmd/example-sp && GOWORK=off go build -trimpath -ldflags "-s -w" -o "$out/example-sp" . )
 cp deploy/systemd/conductor-idp.service "$out/"
 scripts/lab/idp-lab.sh install "$out" $snap
 REMOTE
