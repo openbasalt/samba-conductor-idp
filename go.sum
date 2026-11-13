@@ -84,8 +84,8 @@ github.com/muhlemmer/httpforwarded v0.1.0 h1:x4DLrzXdliq8mprgUMR0olDvHGkou5BJsK/
 github.com/muhlemmer/httpforwarded v0.1.0/go.mod h1:yo9czKedo2pdZhoXe+yDkGVbU0TJ0q9oQ90BVoDEtw0=
 github.com/ncruces/go-strftime v1.0.0 h1:HMFp8mLCTPp341M/ZnA4qaf7ZlsbTc+miZjCLOFAw7w=
 github.com/ncruces/go-strftime v1.0.0/go.mod h1:Fwc5htZGVVkseilnfgOVb9mKy6w1naJmn9CehxcKcls=
-github.com/openbasalt/samba-conductor-ad v0.0.0-20261113172136-d46c193beb72 h1:D0tAPoYBksbfvMxeXCPvK+ncBo2SomwfD4Q+1iMzcNI=
-github.com/openbasalt/samba-conductor-ad v0.0.0-20261113172136-d46c193beb72/go.mod h1:SoMx5e3r1KGkWxyJoYDRbfUHSwCtb2EffAxqBWuE1oE=
+github.com/openbasalt/samba-conductor-ad v0.0.0-20261113200708-1932970a636d h1:88SyPvzubhlYv8K8VOfGRkzJDUzAefq+RhM0xt9dpak=
+github.com/openbasalt/samba-conductor-ad v0.0.0-20261113200708-1932970a636d/go.mod h1:HCCzeXWuyuJQ4uI5RPLmoWQEeuePn/uSVVuNF61OOFc=
 github.com/pkg/errors v0.9.1 h1:FEBLx1zS214owpjy7qsBeixbURkuhQAwrK5UwLGTwt4=
 github.com/pkg/errors v0.9.1/go.mod h1:bwawxfHBFNV+L2hUp1rHADufV3IMtnDRdf1r5NINEl0=
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
