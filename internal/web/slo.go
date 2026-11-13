@@ -134,7 +134,7 @@ func (sess *Session) remember(p samlidp.Participant) {
 // handleSAMLSLO receives LogoutRequests and LogoutResponses.
 func (s *Server) handleSAMLSLO(rc *reqCtx) {
 	ctx := rc.ctx()
-	if !s.ipLimit.Allow("saml:" + rc.ip) {
+	if !s.ipLimit.Allow("saml:" + rc.limitIP()) {
 		rc.errorPage(http.StatusTooManyRequests, "signin.err.rate_ip")
 		return
 	}

@@ -236,7 +236,11 @@ served.
   redirect URI or the SP's registered ACS URLs, because browsers apply it
   to the redirects after a form. The SAML response page therefore needs one click.
 - Rate limits per address and per account (kept below the domain lockout
-  threshold) on sign-in, and per address on the token endpoint.
+  threshold) on sign-in, and per address on the token endpoint. An IPv6
+  client is limited by its /64 network, an IPv4 client by its address; the
+  audit log keeps the full address. The limiters are bounded in memory and
+  prune idle entries; when a table is full of live entries they never drop
+  one, and keys they cannot track share a single limit until it drains.
 - AD bind sub-codes are handled as in conductor: expired and must-change
   passwords go to a change page that needs the old password.
 - A hash-chained audit log (`conductor-idp audit verify`), a sandboxed
