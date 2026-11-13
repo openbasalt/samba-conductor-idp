@@ -107,7 +107,9 @@ Behind a reverse proxy: `listen = "127.0.0.1:9080"`, `behind_proxy = true`,
 the issuer's host name. `trusted_proxies` is required with `behind_proxy`
 (and `admin_trusted_proxies` with `admin_behind_proxy`): rate limits and the
 audit log use the client address from the `X-Forwarded-For` header the proxy
-adds, and only requests from those addresses are believed.
+adds, and only requests from those addresses are believed. Every
+`X-Forwarded-For` line is read, so a proxy may extend the client's header or
+add its own.
 
 ## 5. Service
 

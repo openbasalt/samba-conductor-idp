@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/openbasalt/samba-conductor-idp/internal/oidcp"
+	"github.com/openbasalt/samba-conductor-idp/internal/ratelimit"
 	"github.com/openbasalt/samba-conductor-idp/internal/samlidp"
 )
 
@@ -143,7 +144,7 @@ func (s *Server) withRequest(h http.Handler) http.Handler {
 // limited applies the per-address token-endpoint limit.
 func (s *Server) limited(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !s.tokenLimit.Allow("api:" + s.clientIP(r)) {
+		if !s.tokenLimit.Allow("api:" + ratelimit.AddrKey(s.clientIP(r))) {
 			w.Header().Set("Retry-After", "60")
 			http.Error(w, "too many requests", http.StatusTooManyRequests)
 			return

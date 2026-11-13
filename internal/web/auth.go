@@ -281,7 +281,7 @@ func (s *Server) handleLogin(rc *reqCtx) {
 	password := rc.rawForm("password")
 	enroll := s.enrollToken(rc.form("enroll"))
 	rc.actorHint = clipName(typed)
-	if !s.ipLimit.Allow("login:" + rc.ip) {
+	if !s.ipLimit.Allow("login:" + rc.limitIP()) {
 		s.audit(ctx, rc, "signin.rate_limited", rc.ip, "per-address limit", store.ResultDenied)
 		s.loginError(rc, c, http.StatusTooManyRequests, "signin.err.rate_ip", typed, enroll)
 		return
@@ -486,7 +486,7 @@ func (s *Server) handlePassword(rc *reqCtx) {
 	fail := func(status int, key string) {
 		rc.render(status, "login_password", map[string]any{"Username": sam, "C": c.String(), "Error": rc.T(key)})
 	}
-	if !s.ipLimit.Allow("login:" + rc.ip) {
+	if !s.ipLimit.Allow("login:" + rc.limitIP()) {
 		fail(http.StatusTooManyRequests, "signin.err.rate_ip")
 		return
 	}
@@ -613,7 +613,7 @@ func (s *Server) handleMFAKey(rc *reqCtx) {
 		fail(http.StatusBadRequest, "mfa.err.key")
 		return
 	}
-	if !s.ipLimit.Allow("mfa:" + rc.ip) {
+	if !s.ipLimit.Allow("mfa:" + rc.limitIP()) {
 		fail(http.StatusTooManyRequests, "signin.err.rate_ip")
 		return
 	}
@@ -691,7 +691,7 @@ func (s *Server) handleMFA(rc *reqCtx) {
 	sam := sess.sam
 	sess.mu.Unlock()
 	rc.actorHint = sam
-	if !s.ipLimit.Allow("mfa:" + rc.ip) {
+	if !s.ipLimit.Allow("mfa:" + rc.limitIP()) {
 		rc.render(http.StatusTooManyRequests, "login_2fa", s.mfaData(rc, rc.T("signin.err.rate_ip")))
 		return
 	}
@@ -826,7 +826,7 @@ func (s *Server) handleEnroll(rc *reqCtx) {
 	}
 	c := rc.cont()
 	sess := rc.sess
-	if !s.ipLimit.Allow("mfa:" + rc.ip) {
+	if !s.ipLimit.Allow("mfa:" + rc.limitIP()) {
 		rc.errorPage(http.StatusTooManyRequests, "signin.err.rate_ip")
 		return
 	}

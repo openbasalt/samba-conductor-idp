@@ -94,7 +94,7 @@ idle_minutes = 60
 absolute_hours = 8
 
 [ratelimit]
-per_ip_per_minute = 30
+per_ip_per_minute = 30        # per IPv4 address, per IPv6 /64
 account_failures = 5          # keep below the domain's lockout threshold
 account_window_minutes = 15
 token_per_ip_per_minute = 120

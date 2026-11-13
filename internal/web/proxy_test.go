@@ -44,3 +44,44 @@ func TestClientIPBehindProxy(t *testing.T) {
 		t.Fatalf("no trusted proxies: clientIP = %q", got)
 	}
 }
+
+// A proxy that adds its own X-Forwarded-For line (instead of extending the
+// client's) must not let the client's line decide the address.
+func TestClientIPMultipleForwardedLines(t *testing.T) {
+	trusted, err := parsePrefixes([]string{"127.0.0.1/32"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := &Server{behindProxy: true, trusted: trusted}
+	r := httptest.NewRequest("GET", "https://idp.example.com/login", nil)
+	r.RemoteAddr = "127.0.0.1:50000"
+	r.Header.Add("X-Forwarded-For", "198.51.100.7")
+	r.Header.Add("X-Forwarded-For", "203.0.113.5")
+	if got := s.clientIP(r); got != "203.0.113.5" {
+		t.Fatalf("clientIP = %q, want the proxy's entry", got)
+	}
+	r.Header.Del("X-Forwarded-For")
+	r.Header.Add("X-Forwarded-For", "198.51.100.7, 192.0.2.1")
+	r.Header.Add("X-Forwarded-For", "203.0.113.5, 127.0.0.1")
+	if got := s.clientIP(r); got != "203.0.113.5" {
+		t.Fatalf("clientIP over a proxy chain = %q", got)
+	}
+}
+
+// Address rate limits group an IPv6 client by its /64; the audit address
+// stays complete.
+func TestLimitIPGroupsIPv6(t *testing.T) {
+	for ip, want := range map[string]string{
+		"2001:db8:1:2::10":          "2001:db8:1:2::/64",
+		"2001:db8:1:2:aaaa:bbbb::1": "2001:db8:1:2::/64",
+		"203.0.113.5":               "203.0.113.5",
+	} {
+		rc := &reqCtx{ip: ip}
+		if got := rc.limitIP(); got != want {
+			t.Errorf("limitIP(%q) = %q, want %q", ip, got, want)
+		}
+		if rc.ip != ip {
+			t.Errorf("rc.ip changed to %q", rc.ip)
+		}
+	}
+}

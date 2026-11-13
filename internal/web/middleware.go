@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/openbasalt/samba-conductor-idp/internal/i18n"
+	"github.com/openbasalt/samba-conductor-idp/internal/ratelimit"
 )
 
 // Perm is what a route requires.
@@ -161,7 +162,10 @@ func (s *Server) clientIP(r *http.Request) string {
 	if !s.behindProxy || !s.isTrusted(peer) {
 		return peer.String()
 	}
-	parts := strings.Split(r.Header.Get("X-Forwarded-For"), ",")
+	// Walk X-Forwarded-For from the right, skipping trusted proxies. Every
+	// header line counts: a proxy may append its own line instead of
+	// extending the client's, and the lines join in order.
+	parts := strings.Split(strings.Join(r.Header.Values("X-Forwarded-For"), ","), ",")
 	for i := len(parts) - 1; i >= 0; i-- {
 		a, err := netip.ParseAddr(strings.TrimSpace(parts[i]))
 		if err != nil {
@@ -174,6 +178,10 @@ func (s *Server) clientIP(r *http.Request) string {
 	}
 	return peer.String()
 }
+
+// limitIP is the client's key for the address rate limits: its /64 for
+// IPv6, the address itself for IPv4. Audit records keep rc.ip.
+func (rc *reqCtx) limitIP() string { return ratelimit.AddrKey(rc.ip) }
 
 func (s *Server) isTrusted(a netip.Addr) bool {
 	for _, p := range s.trusted {
