@@ -92,7 +92,7 @@ e2e/run-lab.sh [desktop|mobile]      # Playwright suite on the lab host
 | Path | What |
 |---|---|
 | `cmd/conductor-idp` | `serve`, `client`, `saml`, `keys`, `enroll-link`, `mfa reset`, `audit`, `gen-key`, `check` |
-| `cmd/example-rp`, `cmd/example-sp` | test relying parties (OIDC, SAML) for the lab |
+| `cmd/example-rp`, `cmd/example-sp` | test relying parties (OIDC, SAML) for the lab; `cmd/example-sp` is a Go module of its own |
 | `internal/oidcp` | op storage, keys, provider, claims |
 | `internal/samlidp` | SAML IdP on crewjam, SAML keys |
 | `internal/web` | pages, flows, admin, middleware, sessions |
