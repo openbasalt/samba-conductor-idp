@@ -82,6 +82,8 @@ func newFakeDir() *fakeDir {
 	add("admin", "33333333-3333-4333-8333-333333333333", 2003, "admin@lab.test", sidDomainAdmins, sidEngineering)
 	mc := add("mustchange", "44444444-4444-4444-8444-444444444444", 2004, "", sidEngineering)
 	mc.refuse = "773"
+	sp := add("spoofed", "66666666-6666-4666-8666-666666666666", 2006, "", sidEngineering)
+	sp.refuse = "unverified"
 	add("nomail", "55555555-5555-4555-8555-555555555555", 2005, "", sidEngineering)
 	return d
 }
@@ -94,6 +96,10 @@ func (d *fakeDir) Authenticate(_ context.Context, sam, password string) error {
 	u, ok := d.users[sam]
 	if !ok || u.password != password {
 		return ad.ClassifyBindError(ldap.NewError(ldap.LDAPResultInvalidCredentials, errors.New("80090308: LdapErr: DSID-0C09041C, comment: AcceptSecurityContext error, data 52e, v4563")))
+	}
+	if u.refuse == "unverified" {
+		// The KDC accepted the password but no DC confirmed its answer.
+		return &ad.VerifyError{Cause: errors.New("ldap/dc: invalid credentials")}
 	}
 	if u.refuse != "" {
 		return ad.ClassifyBindError(ldap.NewError(ldap.LDAPResultInvalidCredentials, errors.New("80090308: LdapErr: DSID-0C09041C, comment: AcceptSecurityContext error, data "+u.refuse+", v4563")))

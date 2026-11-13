@@ -98,7 +98,7 @@ is worthless. SAML pending requests are bound the same way.
 - The SSO session is server-side in memory (a restart signs users out of
   the idp, not out of relying parties), idle 60 min, absolute 8 h, new ID
   after the second factor. The idp keeps no user credential: the password
-  is verified with a Kerberos AS exchange (or simple bind fallback) and
+  is verified with Kerberos (or simple bind fallback, see D16) and
   forgotten.
 - `__Host-idp-session` is SameSite=Lax, not Strict: relying parties
   send the browser here through cross-site redirects, and a Strict cookie
@@ -410,3 +410,32 @@ never do.
   from signing in.
 - The consent note stays a setting (D12), edited with the other single
   sign-on settings; conductor's Branding page shows it and links there.
+
+## D16. Password verification proves the KDC (2026-11-13)
+
+- An AS exchange alone does not prove a password: Kerberos does not
+  authenticate the KDC to the client, so whoever answers in its place (on
+  the network path to port 88, or through a forged `_kerberos._tcp` SRV
+  record when `domain.dcs` is not set) can encrypt the reply with a key
+  derived from the password that was typed. `Authenticate` therefore uses
+  `ad.SignInVerified`: the ticket obtains a service ticket for `ldap/<dc>`
+  and binds the CA-pinned LDAPS connection with SASL GSSAPI. A forged KDC
+  does not know the DC's key, so the DC refuses its ticket. One extra TGS
+  exchange and one LDAP bind per sign-in.
+- The DC's WhoAmI answer must name the normalized `sAMAccountName` the user
+  typed, so the account later read with the service account is the one the
+  directory authenticated, not only the one typed. The simple bind fallback
+  checks WhoAmI the same way.
+- A failed verification matches `ad.ErrKDCNotVerified`: it fails closed,
+  never falls back to the simple bind, counts no per-account failure, is
+  logged as an error and audited as `signin.failure` with detail
+  `kdc answer not verified` (or `identity mismatch`), and the user sees the
+  generic directory error. A wrong password stays `signin.err.invalid`.
+- Expired and must-change answers come from the KDC and are unauthenticated
+  as well. Forging one only reaches the password change page for the typed
+  account, which creates no SSO session. The change itself
+  (`ad.ChangePasswordKerberos`) is confirmed with a verified sign-in using
+  the new password before the idp reports success, resets the per-account
+  counter or audits the change; afterwards the user signs in again through
+  the verified path.
+- Empty passwords are refused before any network exchange.

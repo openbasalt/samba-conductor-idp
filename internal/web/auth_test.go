@@ -34,6 +34,35 @@ func TestWrongPasswordAndAccountLimit(t *testing.T) {
 	h.srv.SetLimiterClock(h.clock.Now)
 }
 
+// TestUnverifiedKDCAnswer: a sign-in whose Kerberos answer no domain
+// controller confirmed fails closed, is audited as an infrastructure
+// failure (not a wrong password) and counts no account failure.
+func TestUnverifiedKDCAnswer(t *testing.T) {
+	h := newHarness(t, harnessOpts{})
+	b := h.browser()
+	b.get("/login")
+	for i := 0; i < 6; i++ {
+		b.submit("/login", url.Values{"username": {"spoofed"}, "password": {"Passw0rd!spoofed"}})
+		b.mustStatus(http.StatusBadGateway)
+		if strings.Contains(b.body, "Wrong username or password") || strings.Contains(b.body, "password-input-current") {
+			t.Fatal("unverified answer shown as a password result")
+		}
+	}
+	events, _, _ := h.store.ListAudit(context.Background(), store.AuditFilter{Action: "signin.failure"}, 0, 10)
+	if len(events) == 0 || events[0].Detail != "kdc answer not verified" || events[0].Result != store.ResultFailed {
+		t.Fatalf("audit %+v", events)
+	}
+	// No per-account failures were counted: after six unverified answers
+	// the account is not rate limited once the directory answers normally.
+	h.dir.mu.Lock()
+	h.dir.users["spoofed"].refuse = ""
+	h.dir.mu.Unlock()
+	b.submit("/login", url.Values{"username": {"spoofed"}, "password": {"Passw0rd!spoofed"}})
+	if b.last.StatusCode == http.StatusTooManyRequests {
+		t.Fatal("unverified answers counted as account failures")
+	}
+}
+
 func TestCSRFRequired(t *testing.T) {
 	h := newHarness(t, harnessOpts{})
 	b := h.browser()

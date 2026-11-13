@@ -413,6 +413,20 @@ func (s *Server) flowRequiresMFA(ctx context.Context, c cont) bool {
 // must-change passwords (proven right by AD) lead to the change page.
 func (s *Server) loginFailed(rc *reqCtx, ctx context.Context, c cont, sam, typed, enroll string, err error) {
 	var ae *ad.AuthError
+	if errors.Is(err, ad.ErrKDCNotVerified) {
+		// The KDC accepted the password but its answer could not be proven
+		// with a domain controller (forged KDC, identity mismatch, or DC
+		// unreachable). Not a wrong password: no account failure is
+		// counted, and the user sees the generic directory error.
+		detail := "kdc answer not verified"
+		if errors.Is(err, ad.ErrIdentityMismatch) {
+			detail = "identity mismatch"
+		}
+		s.log.Error("sign-in: Kerberos answer not verified by a domain controller", "user", sam, "err", err)
+		s.audit(ctx, rc, "signin.failure", sam, detail, store.ResultFailed)
+		s.loginError(rc, c, http.StatusBadGateway, "err.directory", typed, enroll)
+		return
+	}
 	if !errors.As(err, &ae) {
 		s.log.Error("sign-in: directory unavailable", "user", sam, "err", err)
 		s.audit(ctx, rc, "signin.failure", sam, "directory unavailable", store.ResultFailed)
@@ -494,13 +508,21 @@ func (s *Server) handlePassword(rc *reqCtx) {
 		if key == "password.err.current" {
 			s.accountFails.Fail(sam)
 		}
-		s.log.Info("expired password change refused", "user", sam, "err", err)
-		s.audit(ctx, rc, "password.change_expired", sam, "", result)
+		detail := ""
+		if errors.Is(err, ad.ErrKDCNotVerified) {
+			// kpasswd reported success, but the change could not be
+			// confirmed with a domain controller.
+			detail = "change not verified"
+			s.log.Error("expired password change not verified by a domain controller", "user", sam, "err", err)
+		} else {
+			s.log.Info("expired password change refused", "user", sam, "err", err)
+		}
+		s.audit(ctx, rc, "password.change_expired", sam, detail, result)
 		fail(http.StatusBadRequest, key)
 		return
 	}
 	s.accountFails.Reset(sam)
-	s.audit(ctx, rc, "password.change_expired", sam, "kpasswd (old password verified)", store.ResultOK)
+	s.audit(ctx, rc, "password.change_expired", sam, "kpasswd (confirmed with a domain controller)", store.ResultOK)
 	s.sess.destroy(rc.sess)
 	s.clearSessionCookie(rc.w)
 	rc.redirect(c.with("/login?m=password_changed"))

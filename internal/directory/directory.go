@@ -1,8 +1,9 @@
 // Package directory adapts the ad library to conductor-idp.
 //
-// Passwords are verified with the user's own credentials (Kerberos AS
-// exchange first, LDAP simple bind over TLS only when configured and no KDC
-// answers) and forgotten right away: the idp keeps no user credential.
+// Passwords are verified with the user's own credentials (Kerberos first,
+// with the ticket proven by an LDAP GSSAPI bind to a DC; LDAP simple bind
+// over TLS only when configured and no KDC answers) and forgotten right
+// away: the idp keeps no user credential.
 // Everything that happens without the user (claims, refresh, userinfo,
 // role checks) reads AD with a read-only service account.
 //
@@ -170,22 +171,42 @@ func ADConfig(realm, caFile string, dcs, preferred, dnsServers []string) (ad.Con
 func (d *Directory) Realm() string { return d.cfg.Realm }
 
 // Authenticate verifies a user's password and forgets it.
+//
+// The Kerberos path is verified (ad.SignInVerified): the TGT is used for an
+// LDAP GSSAPI bind to a DC over the CA-pinned LDAPS connection, and the
+// DC's WhoAmI answer must name sam. A bare AS exchange would accept a
+// forged KDC reply. A failed verification matches ad.ErrKDCNotVerified; it
+// fails closed and never falls back to the simple bind.
 func (d *Directory) Authenticate(ctx context.Context, sam, password string) error {
-	s, err := ad.SignIn(ctx, d.cfg, sam, password)
+	if password == "" {
+		// Rejected before any network exchange (an empty simple bind would
+		// be an unauthenticated bind that "succeeds").
+		return &ad.AuthError{Reason: ad.ReasonInvalidCredentials, Mechanism: "kerberos", Code: "empty password"}
+	}
+	s, err := ad.SignInVerified(ctx, d.cfg, sam, password)
 	if err == nil {
 		s.Close()
 		return nil
 	}
 	var ae *ad.AuthError
-	if errors.As(err, &ae) || !d.fallback {
+	if errors.As(err, &ae) || errors.Is(err, ad.ErrKDCNotVerified) || ctx.Err() != nil || !d.fallback {
 		return err
 	}
-	// No KDC answered: the explicit simple-bind fallback decides.
+	// No KDC answered: the explicit simple-bind fallback decides. The bind
+	// itself is checked by the DC over pinned LDAPS; WhoAmI confirms that it
+	// bound sam and not another account the name resolved to.
 	conn, berr := ad.Connect(ctx, d.cfg, ad.SimpleAuth(sam, password))
 	if berr != nil {
 		return berr
 	}
-	_ = conn.Close()
+	defer func() { _ = conn.Close() }()
+	account, werr := conn.BoundAccount(ctx)
+	if werr != nil {
+		return &ad.VerifyError{Cause: werr}
+	}
+	if !strings.EqualFold(account, sam) {
+		return &ad.VerifyError{Mismatch: true, Cause: fmt.Errorf("simple bind as %q bound %q", sam, account)}
+	}
 	return nil
 }
 

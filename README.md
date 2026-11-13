@@ -35,8 +35,9 @@ the deliberate deviations (PKCE for every client, ES256 only,
   and assertion, optional encryption, metadata, per-SP NameID, attribute
   mapping and allowed groups; SP data only from the admin registry,
   request IDs answered once, staged signing-key rotation.
-- AD: passwords verified with Kerberos (simple bind fallback when
-  configured) and never kept; bind sub-codes handled (expired and
+- AD: passwords verified with Kerberos (the ticket is used for an LDAP
+  GSSAPI bind, so a forged KDC answer is not enough; simple bind fallback
+  when configured) and never kept; bind sub-codes handled (expired and
   must-change go to a change page that needs the old password; locked,
   disabled, expired get a clear message); claims and policy read with a
   read-only service account; `sub` = objectGUID; `groups` by name or SID,
