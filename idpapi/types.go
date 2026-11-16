@@ -96,6 +96,10 @@ type ClientInput struct {
 	GroupsClaim   string   `json:"groups_claim"`
 	GroupsFilter  []string `json:"groups_filter"`
 	RequireMFA    bool     `json:"require_mfa"`
+	// EmailVerified asserts email_verified=true with the email claim: only
+	// for a client whose operator trusts the directory's mail (D18). Off by
+	// default (protocol 2).
+	EmailVerified bool `json:"email_verified"`
 }
 
 // Validate bounds the input (the full rules are the server's).

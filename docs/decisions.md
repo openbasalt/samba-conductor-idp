@@ -369,7 +369,7 @@ never do.
   version 1 (an older conductor-idp answers "not allowlisted", which
   conductor reports as "too old for branding"); changing an existing
   operation's parameters or result bumps it, since both sides decode
-  strictly. Existing results were not changed.
+  strictly. Existing results were not changed. Version 2 (D23) is the first bump.
 - Shared code: the document, its limits and checks, the contrast rules,
   the image checks, the stylesheet generator and the override engine are
   the public `branding` package of this module, used by both programs.
@@ -499,10 +499,8 @@ NameID.
   `-email-verified`, admin pages). conductor-idp cannot prove that the
   account holder controls the mailbox; only a client whose operator
   decided to trust the directory's `mail` should get `true`. The
-  management API does not carry the setting yet (it would change the
-  `client.*` parameters and results, a protocol bump, D15): an update
-  through the API keeps the stored value, a client created there starts
-  with it off.
+  management API carries it from protocol version 2 (D23): conductor's
+  client form sets it, off by default.
 
 ## D19. Revocation when credentials change (2026-11-16)
 
@@ -591,3 +589,20 @@ NameID.
   accepts expired hints, so anyone's own old ID token used to sign any
   victim out through a link; a hint for another user now gets the
   confirmation page, like a request without a hint.
+
+## D23. Management protocol version 2: email_verified (2026-11-16)
+
+- `client.create`, `client.update`, `client.get`, `client.list`,
+  `client.rotate`, `client.set_enabled` and `client.preview` carry
+  `email_verified` in the client input (D18), so conductor's client form
+  can set it. Adding a field to existing parameters and results is an
+  incompatible change for strict decoders, so the management protocol
+  moves to version 2 (D15).
+- There is no version negotiation: a request of another version is
+  answered with the `version` error, and conductor shows it. conductor and
+  conductor-idp are upgraded together, as before; a conductor that still
+  speaks version 1 sees conductor-idp as incompatible until it is updated
+  too. The 2FA socket protocol (`idpapi/mfa.go`, served by conductor) has
+  its own version and does not change.
+- An update through the API now sets the value it carries (it no longer
+  keeps the stored one); the CLI and the admin pages are unchanged.

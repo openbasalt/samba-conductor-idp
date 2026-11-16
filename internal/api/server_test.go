@@ -548,6 +548,55 @@ func TestKeysAndActivity(t *testing.T) {
 	}
 }
 
+// TestClientEmailVerified: the management API carries the per-client
+// email_verified setting (protocol 2), off by default.
+func TestClientEmailVerified(t *testing.T) {
+	e := newEnv(t)
+	in := idpapi.ClientInput{Name: "App", Kind: "confidential", RedirectURIs: []string{"https://app.lab.test/cb"},
+		Scopes: []string{"openid", "email"}, AllowAllUsers: true}
+	var created idpapi.ClientSecret
+	e.must(t, idpapi.OpClientCreate, idpapi.ClientCreateParams{Input: in}, &created)
+	if created.Client.EmailVerified {
+		t.Fatal("email_verified on by default")
+	}
+	var pv idpapi.Preview
+	e.must(t, idpapi.OpClientPreview, idpapi.ClientPreviewParams{ID: created.Client.ID, Username: "alice"}, &pv)
+	if hasValue(pv.Values, "email_verified", "true") {
+		t.Fatal("email_verified asserted while off")
+	}
+	in.EmailVerified = true
+	var got idpapi.Client
+	e.must(t, idpapi.OpClientUpdate, idpapi.ClientUpdateParams{ID: created.Client.ID, Input: in}, &got)
+	if !got.EmailVerified {
+		t.Fatalf("update did not turn it on: %+v", got)
+	}
+	e.must(t, idpapi.OpClientGet, idpapi.ClientRef{ID: got.ID}, &got)
+	if !got.EmailVerified {
+		t.Fatal("not stored")
+	}
+	e.must(t, idpapi.OpClientPreview, idpapi.ClientPreviewParams{ID: got.ID, Username: "alice"}, &pv)
+	if !hasValue(pv.Values, "email_verified", "true") {
+		t.Fatalf("preview lacks email_verified: %+v", pv)
+	}
+	in.EmailVerified = false
+	e.must(t, idpapi.OpClientUpdate, idpapi.ClientUpdateParams{ID: got.ID, Input: in}, &got)
+	if got.EmailVerified {
+		t.Fatal("update did not turn it off")
+	}
+}
+
+// TestProtocolVersionMismatch: there is no negotiation; a request of
+// another version is refused with the version code.
+func TestProtocolVersionMismatch(t *testing.T) {
+	r := idpapi.Request{Version: idpapi.ProtocolVersion - 1, ID: "req-00000001", Op: idpapi.OpStatus,
+		Actor: idpapi.Actor{User: "admin", SID: "S-1-5-21-1-2-3-500", Session: "s"}}
+	if _, err := r.Decode(); err == nil {
+		t.Fatal("a version 1 request was accepted")
+	} else if e, ok := err.(*idpapi.Error); !ok || e.Code != idpapi.CodeVersion {
+		t.Fatalf("version mismatch: %v", err)
+	}
+}
+
 func TestSocketAdmitsOnlyAllowedPeers(t *testing.T) {
 	e := newEnv(t)
 	path := filepath.Join(t.TempDir(), "api.sock")

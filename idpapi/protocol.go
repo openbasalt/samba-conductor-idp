@@ -40,8 +40,12 @@ import (
 // older server answers bad_request "not allowlisted", which a client
 // reports as "conductor-idp is too old for this"); changing the
 // parameters or the result of an existing operation, including adding a
-// field to a result (clients decode strictly), bumps it.
-const ProtocolVersion = 1
+// field to a result (clients decode strictly), bumps it. There is no
+// negotiation: both sides must speak the same version.
+//
+// Version 2: client.* carry the per-client email_verified setting
+// (ClientInput.EmailVerified) in their parameters and results.
+const ProtocolVersion = 2
 
 // DefaultSocketPath is where `conductor-idp serve` listens for conductor.
 const DefaultSocketPath = "/run/conductor-idp/api.sock"
