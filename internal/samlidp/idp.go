@@ -376,6 +376,19 @@ func (i *IdP) Values(ctx context.Context, source string, u *directory.User) ([]s
 	}
 	switch source {
 	case SourceEmail:
+		// Asserted only when no other directory object holds the address:
+		// AD does not keep mail unique, and an SP keyed on e-mail (Google
+		// Workspace) would sign in whoever got a copy of it. Fails closed.
+		if u.Mail == "" {
+			return nil, nil
+		}
+		unique, err := directory.MailUnique(ctx, i.Dir, u)
+		if err != nil {
+			return nil, err
+		}
+		if !unique {
+			return nil, directory.ErrAmbiguousMail
+		}
 		return one(u.Mail), nil
 	case SourceUPN:
 		return one(u.UPN), nil

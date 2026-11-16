@@ -15,6 +15,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/openbasalt/samba-conductor-ad/sid"
 	"github.com/openbasalt/samba-conductor-idp/internal/directory"
 	"github.com/openbasalt/samba-conductor-idp/internal/mfa"
 	"github.com/openbasalt/samba-conductor-idp/internal/registry"
@@ -74,7 +75,7 @@ func parse(fs *flag.FlagSet, args []string) error {
 type clientFlags struct {
 	name, kind, groupsClaim                       string
 	redirects, postLogout, scopes, groups, filter multi
-	allowAll, firstParty, requireMFA              bool
+	allowAll, firstParty, requireMFA, emailVerif  bool
 }
 
 func (f *clientFlags) register(fs *flag.FlagSet, withKind bool) {
@@ -91,12 +92,13 @@ func (f *clientFlags) register(fs *flag.FlagSet, withKind bool) {
 	fs.StringVar(&f.groupsClaim, "groups-claim", "none", "groups claim: none, names or sids")
 	fs.Var(&f.filter, "groups-filter", "only these groups in the claim, SID or name (repeatable)")
 	fs.BoolVar(&f.requireMFA, "require-mfa", false, "require two-factor authentication")
+	fs.BoolVar(&f.emailVerif, "email-verified", false, "assert email_verified=true (only if the client may trust AD's mail)")
 }
 
 func (f *clientFlags) input() registry.ClientInput {
 	return registry.ClientInput{Name: f.name, Kind: f.kind, RedirectURIs: f.redirects, PostLogoutURIs: f.postLogout,
 		Scopes: f.scopes, Groups: f.groups, AllowAllUsers: f.allowAll, FirstParty: f.firstParty, GroupsClaim: f.groupsClaim,
-		GroupsFilter: f.filter, RequireMFA: f.requireMFA}
+		GroupsFilter: f.filter, RequireMFA: f.requireMFA, EmailVerified: &f.emailVerif}
 }
 
 func cmdClient(ctx context.Context, cfgPath string, args []string) error {
@@ -466,7 +468,7 @@ func cmdKeys(ctx context.Context, cfgPath string, args []string) error {
 
 func cmdEnrollLink(ctx context.Context, cfgPath string, args []string) error {
 	fs := flag.NewFlagSet("enroll-link", flag.ContinueOnError)
-	username := fs.String("user", "", "the administrator's sAMAccountName")
+	username := fs.String("user", "", "the user's sAMAccountName")
 	if err := parse(fs, args); err != nil {
 		return err
 	}
@@ -478,14 +480,57 @@ func cmdEnrollLink(ctx context.Context, cfgPath string, args []string) error {
 		return err
 	}
 	defer e.close()
-	sam := strings.ToLower(*username)
+	// The directory says whether the user is an administrator, whose link
+	// works on the admin origin only (anyone else signs in on the issuer).
+	dir, err := e.directory()
+	if err != nil {
+		return fmt.Errorf("the directory is needed to find the user: %w", err)
+	}
+	defer dir.Close()
+	u, err := dir.UserBySAM(ctx, *username)
+	if err != nil {
+		return err
+	}
+	admin, err := e.isAdmin(ctx, dir, u)
+	if err != nil {
+		return err
+	}
+	sam := strings.ToLower(u.SAM)
 	tok := secret.Token("")
 	if err := e.store.CreateEnrollLink(ctx, web.LinkHash(tok), sam, actor(), web.EnrollLinkTTL); err != nil {
 		return err
 	}
 	e.audit(ctx, "admin.enroll_link", sam, "valid 24 h")
-	fmt.Println(e.cfg.EnrollURL() + "/login?enroll=" + tok)
+	fmt.Println(e.cfg.EnrollLinkURL(admin) + "/login?enroll=" + tok)
 	return nil
+}
+
+// isAdmin applies roles.admin_groups (Domain Admins when empty) to a user.
+func (e *env) isAdmin(ctx context.Context, dir *directory.Directory, u *directory.User) (bool, error) {
+	if !u.Active() {
+		return false, nil
+	}
+	var admins []sid.SID
+	for _, g := range e.cfg.Roles.AdminGroups {
+		v, err := sid.Parse(g)
+		if err != nil {
+			return false, err
+		}
+		admins = append(admins, v)
+	}
+	if len(admins) == 0 {
+		da, err := dir.DomainAdminsSID(ctx)
+		if err != nil {
+			return false, err
+		}
+		admins = []sid.SID{da}
+	}
+	for _, a := range admins {
+		if sid.Contains(u.GroupSIDs, a) {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func cmdMFA(ctx context.Context, cfgPath string, args []string) error {
@@ -515,8 +560,62 @@ func cmdMFA(ctx context.Context, cfgPath string, args []string) error {
 	if err != nil {
 		return err
 	}
-	e.audit(ctx, "admin.mfa_reset", u.SAM, fmt.Sprintf("removed=%t (sessions end at the server's next role check)", removed))
-	fmt.Printf("2FA of %s removed: %t\n", u.SAM, removed)
+	detail, err := e.revoke(ctx, u, "second factor reset")
+	if err != nil {
+		return err
+	}
+	e.audit(ctx, "admin.mfa_reset", u.SAM, fmt.Sprintf("removed=%t %s", removed, detail))
+	fmt.Printf("2FA of %s removed: %t; sessions, tokens and consents revoked\n", u.SAM, removed)
+	return nil
+}
+
+// revoke ends what an account holds at the provider. Tokens and consents
+// end at once; browser sessions of a running server end on their next
+// request (it checks the stored revocation).
+func (e *env) revoke(ctx context.Context, u *directory.User, reason string) (string, error) {
+	rev, err := e.store.RevokeUser(ctx, u.GUID, reason)
+	if err != nil {
+		return "", err
+	}
+	if err := e.store.ForgetDevices(ctx, strings.ToLower(u.SAM)); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("reason=%s refresh_tokens_revoked=%d consents_removed=%d", reason, rev.RefreshTokens, rev.Consents), nil
+}
+
+func cmdUser(ctx context.Context, cfgPath string, args []string) error {
+	if len(args) == 0 || args[0] != "revoke" {
+		return usageError("user revoke -user NAME [-reason TEXT]")
+	}
+	fs := flag.NewFlagSet("user revoke", flag.ContinueOnError)
+	username := fs.String("user", "", "sAMAccountName")
+	reason := fs.String("reason", "revoked by an administrator", "reason recorded in the audit log")
+	if err := parse(fs, args[1:]); err != nil {
+		return err
+	}
+	if *username == "" {
+		return usageError("user revoke -user NAME [-reason TEXT]")
+	}
+	e, err := openEnv(ctx, cfgPath)
+	if err != nil {
+		return err
+	}
+	defer e.close()
+	dir, err := e.directory()
+	if err != nil {
+		return fmt.Errorf("the directory is needed to find the user: %w", err)
+	}
+	defer dir.Close()
+	u, err := dir.UserBySAM(ctx, *username)
+	if err != nil {
+		return err
+	}
+	detail, err := e.revoke(ctx, u, *reason)
+	if err != nil {
+		return err
+	}
+	e.audit(ctx, "user.revoke", u.SAM, detail)
+	fmt.Printf("%s: sessions, tokens and consents revoked\n", u.SAM)
 	return nil
 }
 

@@ -42,6 +42,10 @@ type User struct {
 	Enabled     bool
 	Locked      bool
 	Expired     bool // accountExpires in the past
+	// PwdLastSet is the raw pwdLastSet (FILETIME): it changes whenever the
+	// password is changed or reset, and is 0 while the user must change it.
+	// Sessions and tokens record it at sign-in and end when it differs.
+	PwdLastSet int64
 	// GroupSIDs are every group the user belongs to, transitively,
 	// including the primary group.
 	GroupSIDs []sid.SID
@@ -49,6 +53,22 @@ type User struct {
 
 // Active reports whether the account may sign in.
 func (u *User) Active() bool { return u.Enabled && !u.Locked && !u.Expired }
+
+// PasswordChangedSince reports whether the account's password was changed
+// or reset after a sign-in that recorded pwdSet (the account's pwdLastSet
+// then). A record of 0 comes from before the value was kept; authTime
+// decides then. Any difference counts, not only a later value: setting
+// "must change at next logon" writes 0, which is a reset as well.
+func (u *User) PasswordChangedSince(pwdSet int64, authTime time.Time) bool {
+	if pwdSet != 0 {
+		return u.PwdLastSet != pwdSet
+	}
+	if u.PwdLastSet == 0 {
+		return true
+	}
+	set := ad.FileTime(u.PwdLastSet).Time()
+	return authTime.IsZero() || set.After(authTime)
+}
 
 // Name returns the display name, or the account name.
 func (u *User) Name() string {
@@ -90,6 +110,35 @@ type Backend interface {
 	DomainAdminsSID(ctx context.Context) (sid.SID, error)
 	// GroupByName resolves a group's sAMAccountName to its SID.
 	GroupByName(ctx context.Context, name string) (sid.SID, error)
+	// AddressHolders returns the objectGUIDs of every directory object
+	// (users, contacts, groups) that holds an e-mail address in mail, in
+	// proxyAddresses (smtp:) or as userPrincipalName. AD keeps none of
+	// these unique across objects.
+	AddressHolders(ctx context.Context, address string) ([]string, error)
+}
+
+// ErrAmbiguousMail is returned when a user's mail is also held by another
+// directory object: asserting it would let the other object's owner (or
+// whoever set the duplicate) sign in as this user wherever accounts are
+// keyed on e-mail.
+var ErrAmbiguousMail = errors.New("directory: the e-mail address is not unique in the directory")
+
+// MailUnique reports whether u's mail is held by u alone. An empty mail is
+// not unique (there is nothing to assert).
+func MailUnique(ctx context.Context, dir Backend, u *User) (bool, error) {
+	if u.Mail == "" {
+		return false, nil
+	}
+	holders, err := dir.AddressHolders(ctx, u.Mail)
+	if err != nil {
+		return false, err
+	}
+	for _, g := range holders {
+		if !strings.EqualFold(g, u.GUID) {
+			return false, nil
+		}
+	}
+	return true, nil
 }
 
 // ErrNotFound is returned for an unknown user.
@@ -119,6 +168,7 @@ type Directory struct {
 	svc     *ad.Session
 	users   map[string]cachedUser // by GUID and "sam:"+sam
 	names   map[string]cachedName
+	addrs   map[string]cachedHolders
 	daSID   sid.SID
 	daUntil time.Time
 	now     func() time.Time
@@ -131,6 +181,11 @@ type cachedUser struct {
 
 type cachedName struct {
 	name  string
+	until time.Time
+}
+
+type cachedHolders struct {
+	guids []string
 	until time.Time
 }
 
@@ -147,7 +202,8 @@ func New(o Options) (*Directory, error) {
 		ttl = 30 * time.Second
 	}
 	return &Directory{cfg: o.Config, fallback: o.SimpleBindFallback, svcUser: o.ServiceUser, svcPass: o.ServicePassword,
-		cacheTTL: ttl, users: map[string]cachedUser{}, names: map[string]cachedName{}, now: time.Now}, nil
+		cacheTTL: ttl, users: map[string]cachedUser{}, names: map[string]cachedName{}, addrs: map[string]cachedHolders{},
+		now: time.Now}, nil
 }
 
 // ADConfig builds the ad.Config from the configured values.
@@ -352,6 +408,7 @@ func (d *Directory) lookup(ctx context.Context, f escape.Filter) (*User, error) 
 		GUID: found.GUID.String(), SID: found.SID, DN: found.DN, SAM: found.SAMAccountName, UPN: found.UserPrincipalName,
 		Mail: found.Mail, DisplayName: found.DisplayName, GivenName: found.GivenName, Surname: found.Surname,
 		Enabled: found.Enabled(), Locked: found.Locked(), Expired: found.AccountExpired(d.now()), GroupSIDs: groups,
+		PwdLastSet: int64(found.PwdLastSet),
 	}
 	d.remember(u)
 	return u, nil
@@ -487,6 +544,54 @@ func (d *Directory) GroupByName(ctx context.Context, name string) (sid.SID, erro
 		return sid.SID{}, err
 	}
 	return g.SID, nil
+}
+
+// maxHolders bounds the objects read for one address: two already make it
+// ambiguous, a few more only help the audit detail.
+const maxHolders = 10
+
+// AddressHolders implements Backend with one indexed search over the whole
+// domain (cached like user lookups).
+func (d *Directory) AddressHolders(ctx context.Context, address string) ([]string, error) {
+	key := strings.ToLower(address)
+	now := d.now()
+	d.mu.Lock()
+	if c, ok := d.addrs[key]; ok && now.Before(c.until) {
+		d.mu.Unlock()
+		return c.guids, nil
+	}
+	d.mu.Unlock()
+	conn, err := d.connect(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = conn.Close() }()
+	var out []string
+	for e, serr := range conn.Search(ctx, ad.SearchRequest{
+		Filter: escape.Or(escape.Eq("mail", address), escape.Eq("proxyAddresses", "smtp:"+address),
+			escape.Eq("userPrincipalName", address)),
+		Attributes: []string{"objectGUID"},
+		Limit:      maxHolders,
+	}) {
+		if serr != nil {
+			return nil, serr
+		}
+		g, gerr := sid.GUIDFromBytes(e.GetRawAttributeValue("objectGUID"))
+		if gerr != nil {
+			// An entry without a readable objectGUID still holds the
+			// address: count it as another holder.
+			out = append(out, "unknown:"+e.DN)
+			continue
+		}
+		out = append(out, g.String())
+	}
+	d.mu.Lock()
+	if len(d.addrs) >= maxCache {
+		clear(d.addrs)
+	}
+	d.addrs[key] = cachedHolders{guids: out, until: now.Add(d.cacheTTL)}
+	d.mu.Unlock()
+	return out, nil
 }
 
 // ErrGroupNotFound is returned for an unknown group name.

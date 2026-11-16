@@ -30,7 +30,9 @@ the deliberate deviations (PKCE for every client, ES256 only,
   and rotated with an overlap, token, userinfo, revocation, end_session.
   Codes single use (reuse revokes what they issued); opaque access tokens;
   refresh tokens hashed, rotated, reuse revokes the chain; every refresh
-  re-checks the account and its groups in AD.
+  re-checks the account and its groups in AD, and ends when the password
+  was changed or reset since the sign-in. CORS only on the token,
+  userinfo, revocation and key endpoints, never with credentials.
 - SAML 2.0 (crewjam/saml): SP- and IdP-initiated SSO, signed response
   and assertion, optional encryption, metadata, per-SP NameID, attribute
   mapping and allowed groups; SP data only from the admin registry,
@@ -39,9 +41,18 @@ the deliberate deviations (PKCE for every client, ES256 only,
   GSSAPI bind, so a forged KDC answer is not enough; simple bind fallback
   when configured) and never kept; bind sub-codes handled (expired and
   must-change go to a change page that needs the old password; locked,
-  disabled, expired get a clear message); claims and policy read with a
-  read-only service account; `sub` = objectGUID; `groups` by name or SID,
-  nested.
+  disabled and expired accounts get the wrong-password message, the audit
+  log keeps the reason); claims and policy read with a read-only service
+  account; `sub` = objectGUID; `groups` by name or SID, nested; `email`
+  only when no other directory object holds the address, `email_verified`
+  only for clients that opt in.
+- Sign-in limits per address, per account and per account and known
+  browser (a browser that signed in to the account before is not locked
+  out by failures typed elsewhere); wrong second factors are counted per
+  account.
+- Revocation: a password change or reset in AD, a second-factor reset or
+  enrollment, and `user revoke` (CLI, admin pages, management API) end
+  the account's sessions on every listener, its tokens and its consents.
 - Clients and SPs registered by administrators: CLI
   (`conductor-idp client|saml …`) and admin pages; exact redirect URIs,
   allowed AD groups by SID, scopes, consent (first-party skip), optional
@@ -49,8 +60,10 @@ the deliberate deviations (PKCE for every client, ES256 only,
 - SAML single logout: signed HTTP-Redirect LogoutRequests from registered
   SPs, a confirmation for anything else, a signed chain to the other SPs
   of the session; IdP- and OIDC-initiated logouts reach them too.
-- 2FA: TOTP + recovery codes, mandatory for administrators (enrolled
-  through a one-time link), `off/optional/required` for others. On
+- 2FA: TOTP + recovery codes, mandatory for administrators,
+  `off/optional/required` for others; enrollment through a one-time link
+  from an administrator by default (`mfa.enrollment = "self"` allows it
+  right after a recent password). On
   conductor's host, conductor's 2FA instead (one enrollment and one policy
   for both, security keys and passkeys included, through conductor's local
   socket; docs/decisions.md D4).
@@ -92,7 +105,7 @@ e2e/run-lab.sh [desktop|mobile]      # Playwright suite on the lab host
 
 | Path | What |
 |---|---|
-| `cmd/conductor-idp` | `serve`, `client`, `saml`, `keys`, `enroll-link`, `mfa reset`, `audit`, `gen-key`, `check` |
+| `cmd/conductor-idp` | `serve`, `client`, `saml`, `keys`, `enroll-link`, `mfa reset`, `user revoke`, `audit`, `gen-key`, `check` |
 | `cmd/example-rp`, `cmd/example-sp` | test relying parties (OIDC, SAML) for the lab; `cmd/example-sp` is a Go module of its own |
 | `internal/oidcp` | op storage, keys, provider, claims |
 | `internal/samlidp` | SAML IdP on crewjam, SAML keys |

@@ -29,8 +29,9 @@ is [design.md](design.md).
   a code share the authorization request's chain ID).
 - Every token issuance, refresh and userinfo call re-reads the user in AD
   (cache ≤ 30 s) and re-applies the client's policy (enabled, not locked,
-  not expired, member of an allowed group by SID). A refresh refused for
-  that reason ends the chain.
+  not expired, member of an allowed group by SID, password not changed
+  since the sign-in, D19). A refresh refused for that reason ends the
+  chain.
 - Redirect URIs match exactly. Confidential clients: https, or http on a
   loopback host. Public clients are "native": loopback redirects on any
   port (RFC 8252 §7.3) and private-use schemes with a dot are allowed. The
@@ -38,9 +39,8 @@ is [design.md](design.md).
 - `sub` is the objectGUID (canonical string): stable across renames and
   moves, not the SID (which changes on domain migration). Pairwise
   subjects are not offered yet.
-- `email_verified` is true when `mail` is set: AD's `mail` is managed by
-  administrators (users cannot write it on themselves, see the `ad` lab
-  test of self-writable attributes).
+- `email` and `email_verified`: see D18 (the address must be unique in
+  the directory; `email_verified` is a per-client opt-in).
 - The `groups` claim comes from tokenGroups (nested, primary group
   included), rendered as sAMAccountNames or SIDs per client, optionally
   limited to a filter of SIDs. Names come from one batched SID lookup.
@@ -475,3 +475,119 @@ NameID.
   counter or audits the change; afterwards the user signs in again through
   the verified path.
 - Empty passwords are refused before any network exchange.
+
+## D18. E-mail assertions (2026-11-16)
+
+- AD keeps `mail` unique nowhere, and whoever may write `mail` on any
+  object (delegated user administrators, HR provisioning, Account
+  Operators) could copy another person's address. At a relying party or
+  SP that keys accounts on e-mail (the Google Workspace preset uses an
+  e-mail NameID) that is an account takeover across a trust boundary.
+- Before an address is asserted, one indexed search with the service
+  account looks for every object that holds it in `mail`, in
+  `proxyAddresses` (`smtp:`) or as `userPrincipalName` (cached like user
+  lookups, 30 s). When any object other than the user holds it:
+  - OpenID Connect: the `email` claim (and `email_verified`) is left out
+    of the ID token and userinfo, logged and audited as
+    `oidc.email_withheld`; the sign-in itself goes on.
+  - SAML: an e-mail NameID or attribute fails the response (the NameID
+    cannot be left out); the user sees that the address is also set on
+    another account, and the audit log records the refusal. The
+    management API's previews report it as a refusal reason.
+  A directory error fails closed (no claim, no assertion).
+- `email_verified` is a per-client setting, off by default (CLI
+  `-email-verified`, admin pages). conductor-idp cannot prove that the
+  account holder controls the mailbox; only a client whose operator
+  decided to trust the directory's `mail` should get `true`. The
+  management API does not carry the setting yet (it would change the
+  `client.*` parameters and results, a protocol bump, D15): an update
+  through the API keeps the stored value, a client created there starts
+  with it off.
+
+## D19. Revocation when credentials change (2026-11-16)
+
+- Sessions, authorization requests, refresh chains and access tokens
+  record the account's `pwdLastSet` at the password verification. AD
+  changes it on every password change or reset and writes 0 for "must
+  change at next logon". Any difference afterwards ends them: the browser
+  session on its next use of the account (sign-in continuation, consent,
+  SAML response, home page, admin role re-check), refresh (the chain is
+  revoked and audited), userinfo and the token exchange. Rows written
+  before the value was kept compare `pwdLastSet` with the authentication
+  time (access tokens: their creation time) instead.
+- A revocation (`user_revocations`, one row per account) ends everything
+  the account holds at once: refresh and access tokens for every client,
+  its consents, authorization requests completed and not redeemed yet,
+  and the browsers known to it (D20). Every listener checks the stored
+  time on each request with a session, so sessions that started before it
+  end on their next request, also when the revocation came from another
+  process (CLI or management API) or from the other listener.
+- What revokes: a password change through the expired-password page; a
+  second-factor reset (admin pages, `mfa reset`); a new enrollment (the
+  enrolling session stays, every other one ends: they were made without
+  the factor); `user revoke` on the CLI, the admin pages' users tab and
+  the management API's `user.revoke` (additive, protocol 1). A
+  second-factor change made in conductor (conductor backend) is not seen
+  by the idp until conductor calls `user.revoke`.
+- An account is never revoked for something it did not do: a failed
+  sign-in, a refused second factor or a rate limit change nothing here.
+
+## D20. Failure limits that cannot lock the owner out (2026-11-16)
+
+- Second factor: wrong codes, recovery codes and security keys count per
+  account (objectGUID), whatever the session or address
+  (`ratelimit.mfa_failures`, default 10, within
+  `ratelimit.mfa_window_minutes`, default 60, at most 24 h). Past the
+  limit the second factor is refused without being checked until the
+  oldest failure leaves the window; the lock is logged and audited
+  (`mfa.locked`). A correct password never resets the counter. The
+  per-session limit (5, then the sign-in starts over) stays. Only someone
+  who already has the password reaches this step, and the lock ends by
+  itself; the password sign-in is not affected.
+- Password: a browser that completed a password sign-in for an account
+  is remembered for it (`known_devices`: the hash of the browser cookie,
+  30 days, at most 20 per account). It is judged by a counter of its own
+  (account and browser) instead of the account-wide one, so wrong
+  passwords typed elsewhere (anyone can type a user name) never lock the
+  owner out of the browser they use. Any other browser follows the
+  account-wide limit as before; failures from a known browser count there
+  too. A revocation forgets the account's browsers.
+- Locked, disabled, expired and restricted accounts get the
+  wrong-password message: the KDC may report those states before the
+  password is proven, and naming them told anyone the state of any
+  account. The audit log keeps the reason; the clock-skew message stays.
+
+## D21. Second-factor enrollment needs more than a password (2026-11-16)
+
+- `mfa.enrollment = "link"` (default): a user without a second factor
+  sets one up only through a one-time link from an administrator
+  (`enroll-link`, admin pages; 24 h, single use, bound to the user), as
+  administrators already did. Without one, a sign-in that needs a second
+  factor is refused with a message to ask for a link, and the home page
+  offers no enrollment. A stolen password (or a forged KDC answer) can no
+  longer bind the attacker's authenticator and lock the owner out.
+- `"self"`: users who are not administrators may enroll without a link
+  right after a password verified within the last ten minutes; an older
+  session signs in again first. Administrators keep following
+  `admin_enrollment_requires_link`.
+- The link is consumed with the enrollment, after a valid code (a wrong
+  code keeps it); losing a race with another use of the same link undoes
+  the enrollment. Administrator links work on the admin listener only
+  (D14); other users' links point at the issuer, and the public sign-in
+  form carries a link only when it is valid and not an administrator's.
+- With the conductor backend, users enroll in conductor and this setting
+  does not apply.
+
+## D22. CORS and logout hints (2026-11-16)
+
+- The library's default CORS policy (any origin, with credentials, on
+  every endpoint) is replaced: CORS headers only on the token, userinfo,
+  revocation and key set endpoints, for any origin but never with
+  credentials; the authorization endpoint, its callback and end_session
+  are navigations and get none. Discovery keeps
+  `Access-Control-Allow-Origin: *` without credentials.
+- `end_session` with an ID token hint signs the browser out at once only
+  when the hint's subject is the browser session's user. The library also
+  accepts expired hints, so anyone's own old ID token used to sign any
+  victim out through a link; a hint for another user now gets the
+  confirmation page, like a request without a hint.

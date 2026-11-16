@@ -47,6 +47,9 @@ func TestRejects(t *testing.T) {
 		"bad backend":    {"[service_account]", "[mfa]\nbackend = \"x\"\n[service_account]"},
 		"conductor sock": {"[service_account]", "[mfa]\nbackend = \"conductor\"\n[service_account]"},
 		"bad admin sid":  {"[service_account]", "[roles]\nadmin_groups = [\"Domain Admins\"]\n[service_account]"},
+		"bad enrollment": {"[service_account]", "[mfa]\nenrollment = \"anyone\"\n[service_account]"},
+		"mfa window":     {"[service_account]", "[ratelimit]\nmfa_window_minutes = 2000\n[service_account]"},
+		"mfa failures":   {"[service_account]", "[ratelimit]\nmfa_failures = 0\n[service_account]"},
 	} {
 		body := strings.Replace(valid, edit[0], edit[1], 1)
 		if name == "no tls public" {
@@ -153,5 +156,25 @@ allowed_origins = ["https://Fonts.Example.com"]
 		if _, err := Load(write(t, valid+"\n[branding]\n"+bad+"\n")); err == nil || !strings.Contains(err.Error(), "branding") {
 			t.Errorf("%s: %v", bad, err)
 		}
+	}
+}
+
+// The conservative defaults: enrollment by link only, a per-account
+// second-factor limit.
+func TestSecurityDefaults(t *testing.T) {
+	c := Default()
+	if c.MFA.Enrollment != EnrollLink || !c.UserEnrollmentLinkRequired() || !c.AdminEnrollmentLinkRequired() {
+		t.Fatalf("enrollment defaults: %q", c.MFA.Enrollment)
+	}
+	if c.RateLimit.MFAFailures < 1 || c.RateLimit.MFAWindowMinutes < 1 {
+		t.Fatalf("mfa limits: %+v", c.RateLimit)
+	}
+	c.MFA.Enrollment = EnrollSelf
+	if c.UserEnrollmentLinkRequired() {
+		t.Fatal("self enrollment still needs a link")
+	}
+	c.Server.Issuer = "https://idp.example.com"
+	if c.EnrollLinkURL(false) != "https://idp.example.com" {
+		t.Fatalf("user link base %q", c.EnrollLinkURL(false))
 	}
 }

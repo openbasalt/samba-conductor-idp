@@ -63,17 +63,23 @@ type fakeDir struct {
 	names map[string]string    // SID -> group name
 	// changed records expired-password changes.
 	changed map[string]string
+	// contacts are extra directory objects holding an address (GUID ->
+	// address), e.g. a contact or another user with a copied mail.
+	contacts map[string]string
 }
 
+// pwdSetBase is the fake pwdLastSet of every test account.
+var pwdSetBase = int64(ad.FileTimeFrom(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)))
+
 func newFakeDir() *fakeDir {
-	d := &fakeDir{users: map[string]*fakeUser{}, changed: map[string]string{}, names: map[string]string{
+	d := &fakeDir{users: map[string]*fakeUser{}, changed: map[string]string{}, contacts: map[string]string{}, names: map[string]string{
 		sidDomainAdmins.String(): "Domain Admins", sidDomainUsers.String(): "Domain Users",
 		sidEngineering.String(): "Engineering", sidSales.String(): "Sales",
 	}}
 	add := func(sam, guid string, rid uint32, mail string, groups ...sid.SID) *fakeUser {
 		u := &fakeUser{password: "Passw0rd!" + sam, User: directory.User{GUID: guid, SID: dsid(rid), SAM: sam, UPN: sam + "@lab.test",
 			Mail: mail, DisplayName: strings.ToUpper(sam[:1]) + sam[1:], GivenName: sam, Surname: "Tester", Enabled: true,
-			GroupSIDs: append([]sid.SID{sidDomainUsers}, groups...)}}
+			PwdLastSet: pwdSetBase, GroupSIDs: append([]sid.SID{sidDomainUsers}, groups...)}}
 		d.users[sam] = u
 		return u
 	}
@@ -121,6 +127,7 @@ func (d *fakeDir) ChangeExpiredPassword(_ context.Context, sam, oldPassword, new
 		return ad.ErrPasswordPolicy
 	}
 	u.password, u.refuse = newPassword, ""
+	u.PwdLastSet++
 	d.changed[sam] = newPassword
 	return nil
 }
@@ -173,6 +180,23 @@ func (d *fakeDir) GroupByName(_ context.Context, name string) (sid.SID, error) {
 	return sid.SID{}, directory.ErrGroupNotFound
 }
 
+func (d *fakeDir) AddressHolders(_ context.Context, address string) ([]string, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	var out []string
+	for _, u := range d.users {
+		if strings.EqualFold(u.Mail, address) || strings.EqualFold(u.UPN, address) {
+			out = append(out, u.GUID)
+		}
+	}
+	for g, a := range d.contacts {
+		if strings.EqualFold(a, address) {
+			out = append(out, g)
+		}
+	}
+	return out, nil
+}
+
 func (d *fakeDir) set(sam string, f func(u *fakeUser)) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -221,6 +245,8 @@ type harnessOpts struct {
 	// templatesDir and allowed set the [branding] section.
 	templatesDir string
 	allowed      []string
+	// enrollment sets mfa.enrollment ("" keeps the default, "link").
+	enrollment string
 }
 
 func newHarness(t *testing.T, o harnessOpts) *harness {
@@ -253,6 +279,9 @@ func newHarness(t *testing.T, o harnessOpts) *harness {
 	cfg.SAML.Enabled = true
 	if o.policy != "" {
 		cfg.MFA.Policy = o.policy
+	}
+	if o.enrollment != "" {
+		cfg.MFA.Enrollment = o.enrollment
 	}
 	switch o.admin {
 	case "split":

@@ -104,8 +104,20 @@ func (s *Store) DeleteTOTP(ctx context.Context, userKey string) (bool, error) {
 	return n == 1, tx.Commit()
 }
 
-// CreateEnrollLink stores the hash of a one-time administrator enrollment
-// link for one username.
+// EnrollLinkUser returns the username of an unused, unexpired link
+// (ErrNotFound otherwise).
+func (s *Store) EnrollLinkUser(ctx context.Context, hash string) (string, error) {
+	var u string
+	err := s.db.QueryRowContext(ctx, `SELECT username FROM enroll_links WHERE token_hash = ? AND used_at = 0 AND expires_at > ?`,
+		hash, nanos(s.now())).Scan(&u)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", ErrNotFound
+	}
+	return u, err
+}
+
+// CreateEnrollLink stores the hash of a one-time enrollment link for one
+// username.
 func (s *Store) CreateEnrollLink(ctx context.Context, hash, username, createdBy string, ttl time.Duration) error {
 	now := s.now()
 	_, err := s.db.ExecContext(ctx, `INSERT INTO enroll_links(token_hash, username, created_by, created_at, expires_at) VALUES (?, ?, ?, ?, ?)`,

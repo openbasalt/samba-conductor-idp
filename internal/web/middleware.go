@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	"errors"
 	"net"
 	"net/http"
 	"net/netip"
@@ -211,6 +212,24 @@ func (s *Server) wrap(rt route) http.Handler {
 		if c, err := r.Cookie(s.sessionName); err == nil {
 			rc.sess = s.sess.get(c.Value)
 		}
+		if rc.sess != nil {
+			// A revocation of the account (second factor reset or enrolled
+			// elsewhere, explicit revoke, also from the CLI or conductor)
+			// ends every session that started before it: the request goes
+			// on as one without a session.
+			revoked, err := s.sessionRevoked(rc.r.Context(), rc.sess)
+			if err != nil {
+				s.log.Error("revocation check failed", "err", err)
+				rc.errorPage(http.StatusInternalServerError, "err.internal")
+				return
+			}
+			if revoked {
+				s.audit(rc.r.Context(), rc, "signout", "", "session ended: account revoked", "ok")
+				s.sess.destroy(rc.sess)
+				rc.sess = nil
+				s.clearSessionCookie(w)
+			}
+		}
 		defer func() {
 			if v := recover(); v != nil {
 				s.log.Error("handler panic", "path", r.URL.Path, "panic", v)
@@ -309,6 +328,10 @@ func (s *Server) guard(rc *reqCtx) bool {
 	}
 	if rt.perm == PermAdmin {
 		ok, err := s.isAdmin(rc.ctx(), rc.sess)
+		if errors.Is(err, errSessionRevoked) {
+			s.endRevoked(rc, cont{})
+			return false
+		}
 		if err != nil {
 			s.log.Warn("admin re-check failed", "err", err)
 			rc.errorPage(http.StatusBadGateway, "err.directory")
@@ -338,12 +361,12 @@ func (s *Server) guard(rc *reqCtx) bool {
 // roles.cache_seconds).
 func (s *Server) isAdmin(ctx context.Context, sess *Session) (bool, error) {
 	sess.mu.Lock()
-	guid, admin, at := sess.guid, sess.admin, sess.adminAt
+	admin, at := sess.admin, sess.adminAt
 	sess.mu.Unlock()
 	if s.now().Sub(at) < s.cfg.RoleCacheTTL() {
 		return admin, nil
 	}
-	u, err := s.dir.UserByGUID(ctx, guid)
+	u, err := s.sessionUser(ctx, sess)
 	if err != nil {
 		return false, err
 	}

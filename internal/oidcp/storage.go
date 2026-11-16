@@ -12,7 +12,8 @@
 //   - refresh tokens rotate on every use; presenting a rotated token
 //     revokes its whole chain (and the access tokens it minted); every
 //     refresh re-checks the account in AD (enabled, not locked, still in
-//     the client's allowed groups);
+//     the client's allowed groups, password not changed or reset since
+//     the sign-in);
 //   - claims only for scopes the client is registered for, groups by name
 //     or SID per client.
 package oidcp
@@ -140,10 +141,13 @@ type tokenSource interface {
 	clientIDForTokens() string
 	amrForTokens() ([]string, time.Time)
 	chainForTokens() string
+	// pwdSetForTokens is the account's pwdLastSet at sign-in.
+	pwdSetForTokens() int64
 }
 
 func (a *authRequest) clientIDForTokens() string           { return a.r.ClientID }
 func (a *authRequest) amrForTokens() ([]string, time.Time) { return a.r.AMR, a.r.AuthTime }
+func (a *authRequest) pwdSetForTokens() int64              { return a.r.PwdSet }
 
 // chainForTokens: tokens minted from a code belong to the request's chain,
 // so a reused code revokes them all.
@@ -161,6 +165,7 @@ func (r *refreshRequest) SetCurrentScopes(scopes []string)    { r.t.Scopes = sco
 func (r *refreshRequest) clientIDForTokens() string           { return r.t.ClientID }
 func (r *refreshRequest) amrForTokens() ([]string, time.Time) { return r.t.AMR, r.t.AuthTime }
 func (r *refreshRequest) chainForTokens() string              { return r.t.ChainID }
+func (r *refreshRequest) pwdSetForTokens() int64              { return r.t.PwdSet }
 
 // client adapts store.Client to op.Client.
 type client struct {
@@ -330,8 +335,21 @@ func Allowed(c *store.Client, u *directory.User) bool {
 	return c.AllowAllUsers || u.InAnyGroup(c.AllowedGroups)
 }
 
-// checkUser re-reads the user in AD and applies the client's policy.
-func (s *Storage) checkUser(ctx context.Context, subject, clientID string) (*directory.User, *store.Client, error) {
+// signIn is what a token remembers of the sign-in it descends from.
+type signIn struct {
+	pwdSet   int64
+	authTime time.Time
+}
+
+func signInOf(src tokenSource) signIn {
+	_, at := src.amrForTokens()
+	return signIn{pwdSet: src.pwdSetForTokens(), authTime: at}
+}
+
+// checkUser re-reads the user in AD and applies the client's policy: an
+// account that may use the client and whose password was not changed or
+// reset since the sign-in the token descends from.
+func (s *Storage) checkUser(ctx context.Context, subject, clientID string, si signIn) (*directory.User, *store.Client, error) {
 	c, err := s.Store.GetClient(ctx, clientID)
 	if err != nil || !c.Enabled {
 		return nil, nil, oidc.ErrInvalidClient().WithDescription("unknown client")
@@ -347,8 +365,15 @@ func (s *Storage) checkUser(ctx context.Context, subject, clientID string) (*dir
 	if !Allowed(c, u) {
 		return nil, nil, oidc.ErrInvalidGrant().WithDescription("the account may not use this client")
 	}
+	if u.PasswordChangedSince(si.pwdSet, si.authTime) {
+		return nil, nil, errPasswordChanged
+	}
 	return u, c, nil
 }
+
+// errPasswordChanged refuses tokens of a sign-in made with a password that
+// was changed or reset since.
+var errPasswordChanged = oidc.ErrInvalidGrant().WithDescription("the account's password changed since the sign-in")
 
 // ---- tokens ----
 
@@ -357,6 +382,9 @@ func (s *Storage) newAccessToken(ctx context.Context, clientID, chainID string, 
 	t := &store.AccessToken{
 		ID: uuid.NewString(), ChainID: chainID, ClientID: clientID, Subject: req.GetSubject(), Scopes: req.GetScopes(),
 		Audience: req.GetAudience(), CreatedAt: now, ExpiresAt: now.Add(s.Lifetimes.AccessToken),
+	}
+	if src, ok := req.(tokenSource); ok {
+		t.PwdSet = src.pwdSetForTokens()
 	}
 	return t, s.Store.CreateAccessToken(ctx, t)
 }
@@ -368,7 +396,7 @@ func (s *Storage) CreateAccessToken(ctx context.Context, req op.TokenRequest) (s
 	if !ok {
 		return "", time.Time{}, oidc.ErrUnsupportedGrantType()
 	}
-	if _, _, err := s.checkUser(ctx, req.GetSubject(), src.clientIDForTokens()); err != nil {
+	if _, _, err := s.checkUser(ctx, req.GetSubject(), src.clientIDForTokens(), signInOf(src)); err != nil {
 		return "", time.Time{}, err
 	}
 	t, err := s.newAccessToken(ctx, src.clientIDForTokens(), src.chainForTokens(), req)
@@ -387,13 +415,17 @@ func (s *Storage) CreateAccessAndRefreshTokens(ctx context.Context, req op.Token
 		return "", "", time.Time{}, oidc.ErrUnsupportedGrantType()
 	}
 	clientID := src.clientIDForTokens()
-	if _, _, err := s.checkUser(ctx, req.GetSubject(), clientID); err != nil {
+	if _, _, err := s.checkUser(ctx, req.GetSubject(), clientID, signInOf(src)); err != nil {
 		if current != "" {
 			// The account lost access: end the chain.
 			if old, gerr := s.Store.GetRefreshTokenByHash(ctx, secret.Hash(current)); gerr == nil {
 				_ = s.Store.RevokeChain(ctx, old.ChainID)
 			}
-			s.audit(ctx, "oidc.refresh", req.GetSubject(), clientID, "account no longer allowed; chain revoked", "denied")
+			detail := "account no longer allowed; chain revoked"
+			if errors.Is(err, errPasswordChanged) {
+				detail = "password changed since the sign-in; chain revoked"
+			}
+			s.audit(ctx, "oidc.refresh", req.GetSubject(), clientID, detail, "denied")
 		}
 		return "", "", time.Time{}, err
 	}
@@ -427,7 +459,7 @@ func (s *Storage) CreateAccessAndRefreshTokens(ctx context.Context, req op.Token
 	rt := &store.RefreshToken{
 		ID: uuid.NewString(), ChainID: chainID, TokenHash: secret.Hash(value), ClientID: clientID,
 		Subject: req.GetSubject(), Scopes: req.GetScopes(), Audience: req.GetAudience(), AMR: amr, AuthTime: authTime,
-		CreatedAt: now, ExpiresAt: idle, ChainExpiresAt: chainExpires,
+		PwdSet: src.pwdSetForTokens(), CreatedAt: now, ExpiresAt: idle, ChainExpiresAt: chainExpires,
 	}
 	if err := s.Store.CreateRefreshToken(ctx, rt); err != nil {
 		return "", "", time.Time{}, err
@@ -584,7 +616,11 @@ func (s *Storage) SetUserinfoFromScopes(context.Context, *oidc.UserInfo, string,
 
 // SetUserinfoFromRequest fills the ID token claims.
 func (s *Storage) SetUserinfoFromRequest(ctx context.Context, info *oidc.UserInfo, req op.IDTokenRequest, scopes []string) error {
-	return s.setUserinfo(ctx, info, req.GetSubject(), req.GetClientID(), scopes)
+	si := signIn{authTime: req.GetAuthTime()}
+	if src, ok := req.(tokenSource); ok {
+		si = signInOf(src)
+	}
+	return s.setUserinfo(ctx, info, req.GetSubject(), req.GetClientID(), scopes, si)
 }
 
 // SetUserinfoFromToken fills the userinfo endpoint answer.
@@ -593,7 +629,9 @@ func (s *Storage) SetUserinfoFromToken(ctx context.Context, info *oidc.UserInfo,
 	if err != nil || !t.RevokedAt.IsZero() || !s.now().Before(t.ExpiresAt) {
 		return errors.New("token is invalid or expired")
 	}
-	return s.setUserinfo(ctx, info, t.Subject, t.ClientID, t.Scopes)
+	// An access token written before pwd_set was recorded falls back to its
+	// creation time (it was minted after the sign-in).
+	return s.setUserinfo(ctx, info, t.Subject, t.ClientID, t.Scopes, signIn{pwdSet: t.PwdSet, authTime: t.CreatedAt})
 }
 
 // SetIntrospectionFromToken implements op.Storage. The introspection
@@ -621,14 +659,18 @@ func (s *Storage) ValidateJWTProfileScopes(context.Context, string, []string) ([
 // Health implements op.Storage.
 func (s *Storage) Health(ctx context.Context) error { return s.Store.Ping(ctx) }
 
-func (s *Storage) setUserinfo(ctx context.Context, info *oidc.UserInfo, subject, clientID string, scopes []string) error {
-	u, c, err := s.checkUser(ctx, subject, clientID)
+func (s *Storage) setUserinfo(ctx context.Context, info *oidc.UserInfo, subject, clientID string, scopes []string, si signIn) error {
+	u, c, err := s.checkUser(ctx, subject, clientID, si)
 	if err != nil {
 		return err
 	}
-	claims, err := Claims(ctx, s.Dir, c, u, scopes)
+	claims, withheld, err := Claims(ctx, s.Dir, c, u, scopes)
 	if err != nil {
 		return err
+	}
+	if withheld {
+		s.log().Warn("e-mail claim withheld: the address is not unique in the directory", "subject", u.GUID, "client", c.ID)
+		s.audit(ctx, "oidc.email_withheld", u.GUID, c.ID, "mail not unique in the directory", "denied")
 	}
 	info.Subject = u.GUID
 	if v, ok := claims["preferred_username"].(string); ok {
@@ -639,7 +681,7 @@ func (s *Storage) setUserinfo(ctx context.Context, info *oidc.UserInfo, subject,
 	}
 	if v, ok := claims["email"].(string); ok {
 		info.Email = v
-		info.EmailVerified = oidc.Bool(true)
+		info.EmailVerified = oidc.Bool(c.EmailVerified)
 	}
 	if v, ok := claims["groups"]; ok {
 		info.AppendClaims("groups", v)
@@ -648,8 +690,10 @@ func (s *Storage) setUserinfo(ctx context.Context, info *oidc.UserInfo, subject,
 }
 
 // Claims computes the claims a client gets for a user and scopes: only
-// what the client is registered for and the user granted.
-func Claims(ctx context.Context, dir directory.Backend, c *store.Client, u *directory.User, scopes []string) (map[string]any, error) {
+// what the client is registered for and the user granted. withheld is true
+// when the email claim was asked for and left out because the address is
+// not unique in the directory.
+func Claims(ctx context.Context, dir directory.Backend, c *store.Client, u *directory.User, scopes []string) (claims map[string]any, withheld bool, err error) {
 	out := map[string]any{"sub": u.GUID}
 	for _, sc := range scopes {
 		if sc != oidc.ScopeOpenID && !slices.Contains(c.Scopes, sc) {
@@ -666,23 +710,35 @@ func Claims(ctx context.Context, dir directory.Backend, c *store.Client, u *dire
 				out["family_name"] = u.Surname
 			}
 		case oidc.ScopeEmail:
-			// AD's mail attribute is managed by administrators (users
-			// cannot write it on themselves), so it is presented as
-			// verified. Accounts without mail get no email claim.
-			if u.Mail != "" {
-				out["email"] = u.Mail
+			// AD keeps mail unique nowhere: whoever may write mail on any
+			// object could otherwise copy another user's address and be
+			// that user at a client keyed on e-mail. The claim is given
+			// only when no other object holds the address (mail,
+			// proxyAddresses or userPrincipalName); email_verified follows
+			// the client's setting. Accounts without mail get no claim.
+			if u.Mail == "" {
+				continue
 			}
+			unique, err := directory.MailUnique(ctx, dir, u)
+			if err != nil {
+				return nil, false, err
+			}
+			if !unique {
+				withheld = true
+				continue
+			}
+			out["email"] = u.Mail
 		case ScopeGroups:
 			groups, err := GroupsClaim(ctx, dir, c.GroupsClaim, c.GroupsFilter, u)
 			if err != nil {
-				return nil, err
+				return nil, false, err
 			}
 			if groups != nil {
 				out["groups"] = groups
 			}
 		}
 	}
-	return out, nil
+	return out, withheld, nil
 }
 
 // GroupsClaim renders a user's groups as names or SIDs, optionally limited

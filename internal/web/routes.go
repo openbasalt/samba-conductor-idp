@@ -52,6 +52,7 @@ func (s *Server) pages() []route {
 		{method: "POST", pattern: "/admin/keys/rotate", perm: PermAdmin, on: surfaceAdmin, h: s.handleAdminKeysRotate},
 		{method: "GET", pattern: "/admin/users", perm: PermAdmin, on: surfaceAdmin, h: s.handleAdminUsers},
 		{method: "POST", pattern: "/admin/users/mfa-reset", perm: PermAdmin, on: surfaceAdmin, h: s.handleAdminMFAReset},
+		{method: "POST", pattern: "/admin/users/revoke", perm: PermAdmin, on: surfaceAdmin, h: s.handleAdminRevoke},
 		{method: "POST", pattern: "/admin/users/enroll-link", perm: PermAdmin, on: surfaceAdmin, h: s.handleAdminEnrollLink},
 		{method: "GET", pattern: "/admin/audit", perm: PermAdmin, on: surfaceAdmin, h: s.handleAdminAudit},
 	}

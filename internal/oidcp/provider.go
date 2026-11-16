@@ -7,8 +7,10 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 
+	"github.com/rs/cors"
 	"github.com/zitadel/oidc/v3/pkg/op"
 )
 
@@ -51,10 +53,32 @@ func NewProvider(issuer string, storage *Storage, cryptoKey [32]byte, logger *sl
 		op.NewEndpoint(strings.TrimPrefix(EndSession, "/")),
 		op.NewEndpoint(strings.TrimPrefix(KeysPath, "/")),
 	)}
+	opts = append(opts, op.WithCORSOptions(CORSOptions()))
 	if logger != nil {
 		opts = append(opts, op.WithLogger(logger))
 	}
 	return op.NewProvider(cfg, storage, op.StaticIssuer(strings.TrimRight(issuer, "/")), opts...)
+}
+
+// corsPaths are the endpoints a browser-based client calls with fetch:
+// token, userinfo, revocation and the key set. The authorization endpoint,
+// its callback and end_session are navigations and get no CORS headers.
+var corsPaths = []string{TokenPath, UserinfoPath, RevokePath, KeysPath}
+
+// CORSOptions replace the library's default (any origin, with
+// credentials): any origin may call the corsPaths, never with credentials
+// (cookies or HTTP authentication handled by the browser); every other
+// path answers without CORS headers. A public client authenticates with
+// PKCE and its tokens, not with anything the browser adds.
+func CORSOptions() *cors.Options {
+	return &cors.Options{
+		AllowCredentials: false,
+		AllowedHeaders:   []string{"Accept", "Accept-Language", "Authorization", "Content-Type"},
+		AllowedMethods:   []string{http.MethodGet, http.MethodHead, http.MethodPost},
+		AllowOriginVaryRequestFunc: func(r *http.Request, _ string) (bool, []string) {
+			return slices.Contains(corsPaths, r.URL.Path), nil
+		},
+	}
 }
 
 // Paths the web server routes to the provider.

@@ -89,6 +89,10 @@ const (
 	OpActivity    Op = "activity.summary"
 	OpAuditList   Op = "audit.list"
 	OpAuditVerify Op = "audit.verify"
+
+	// OpUserRevoke ends a user's sessions and revokes their tokens and
+	// consents (added in protocol 1 without a bump: additive).
+	OpUserRevoke Op = "user.revoke"
 )
 
 // Mutating reports whether the operation changes state. Mutations are
@@ -97,7 +101,7 @@ const (
 func (o Op) Mutating() bool {
 	switch o {
 	case OpClientCreate, OpClientUpdate, OpClientRotate, OpClientEnable, OpClientDelete,
-		OpSPCreate, OpSPUpdate, OpSPEnable, OpSPDelete, OpKeysRotate, OpSettingsUpdate, OpBrandingUpdate:
+		OpSPCreate, OpSPUpdate, OpSPEnable, OpSPDelete, OpKeysRotate, OpSettingsUpdate, OpBrandingUpdate, OpUserRevoke:
 		return true
 	}
 	return false
@@ -209,6 +213,8 @@ var Allowlist = map[Op]func() Params{
 	OpActivity:    func() Params { return &ActivityParams{} },
 	OpAuditList:   func() Params { return &AuditListParams{} },
 	OpAuditVerify: func() Params { return &NoParams{} },
+
+	OpUserRevoke: func() Params { return &UserRevokeParams{} },
 }
 
 var (

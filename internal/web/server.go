@@ -66,9 +66,16 @@ type Server struct {
 	trusted []netip.Prefix
 	mux     *http.ServeMux
 
-	ipLimit      *ratelimit.Bucket
-	tokenLimit   *ratelimit.Bucket
+	ipLimit    *ratelimit.Bucket
+	tokenLimit *ratelimit.Bucket
+	// accountFails counts wrong passwords per account from browsers that
+	// never signed in to it; deviceFails per account and known browser
+	// (those are exempt from accountFails, so failures from elsewhere
+	// cannot lock the owner out); mfaFails counts wrong second factors per
+	// account (objectGUID), whatever the session or address.
 	accountFails *ratelimit.Failures
+	deviceFails  *ratelimit.Failures
+	mfaFails     *ratelimit.Failures
 	endSessions  *endSessionTickets
 	adminSIDs    []sid.SID
 
@@ -201,6 +208,8 @@ func New(o Options) (*Server, error) {
 	s.ipLimit = ratelimit.NewBucket(s.cfg.RateLimit.PerIPPerMinute, time.Minute)
 	s.tokenLimit = ratelimit.NewBucket(s.cfg.RateLimit.TokenPerIPPerMinute, time.Minute)
 	s.accountFails = ratelimit.NewFailures(s.cfg.RateLimit.AccountFailures, time.Duration(s.cfg.RateLimit.AccountWindowMinutes)*time.Minute)
+	s.deviceFails = ratelimit.NewFailures(s.cfg.RateLimit.AccountFailures, time.Duration(s.cfg.RateLimit.AccountWindowMinutes)*time.Minute)
+	s.mfaFails = ratelimit.NewFailures(s.cfg.RateLimit.MFAFailures, time.Duration(s.cfg.RateLimit.MFAWindowMinutes)*time.Minute)
 	s.endSessions = newEndSessionTickets(now)
 	s.logouts = newLogoutChains(now)
 	s.allSessions = []*sessions{s.sess}
@@ -294,7 +303,8 @@ func (s *Server) Sweep() {
 // SetLimiterClock replaces the limiters' clock (tests).
 func (s *Server) SetLimiterClock(now func() time.Time) {
 	ratelimit.SetClock(now, s.ipLimit, s.accountFails)
-	ratelimit.SetClock(now, s.tokenLimit, nil)
+	ratelimit.SetClock(now, s.tokenLimit, s.deviceFails)
+	ratelimit.SetClock(now, nil, s.mfaFails)
 }
 
 // audit appends an event; failures are logged, never shown.

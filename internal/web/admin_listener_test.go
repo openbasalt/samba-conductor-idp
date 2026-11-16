@@ -98,11 +98,16 @@ func TestSeparateAdminListener(t *testing.T) {
 	adm.get("/admin/keys")
 	adm.mustStatus(http.StatusOK)
 
-	// Enrollment links made there point at the admin listener.
+	// Enrollment links made there point at the admin listener for an
+	// administrator and at the public sign-in page for anyone else.
+	adm.get("/admin/users")
+	adm.submit("/admin/users/enroll-link", url.Values{"username": {"admin"}})
+	adm.mustStatus(http.StatusOK)
+	adm.mustContain(h.adminTS.URL + "/login?enroll=")
 	adm.get("/admin/users")
 	adm.submit("/admin/users/enroll-link", url.Values{"username": {"alice"}})
 	adm.mustStatus(http.StatusOK)
-	adm.mustContain(h.adminTS.URL + "/login?enroll=")
+	adm.mustContain(h.ts.URL + "/login?enroll=")
 
 	// The admin listener serves no OpenID Connect or SAML endpoint and no
 	// consent page.

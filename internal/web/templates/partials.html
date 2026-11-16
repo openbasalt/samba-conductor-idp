@@ -36,7 +36,8 @@
 </select></div>
 <div class="field"><label for="c-gfilter">{{t "admin.client.groups_filter"}}</label><textarea id="c-gfilter" name="groups_filter" rows="2" data-e2e="client-input-groups-filter">{{$f.GroupsFilter}}</textarea><span class="hint">{{t "admin.client.groups_filter_hint"}}</span></div>
 {{template "check" (dict "ID" "c-first" "Name" "first_party" "On" $f.FirstParty "Label" "admin.client.first_party" "Hint" "admin.client.first_party_hint")}}
-{{template "check" (dict "ID" "c-mfa" "Name" "require_mfa" "On" $f.RequireMFA "Label" "admin.require_mfa" "Hint" "")}}{{end}}
+{{template "check" (dict "ID" "c-mfa" "Name" "require_mfa" "On" $f.RequireMFA "Label" "admin.require_mfa" "Hint" "")}}
+{{template "check" (dict "ID" "c-emailv" "Name" "email_verified" "On" $f.EmailVerified "Label" "admin.client.email_verified" "Hint" "admin.client.email_verified_hint")}}{{end}}
 
 {{define "sp-fields"}}{{$f := .D.F}}
 <div class="field"><label for="s-name">{{t "admin.sp.name"}}</label><input id="s-name" name="name" type="text" maxlength="100" required value="{{$f.Name}}" data-e2e="sp-input-name"></div>

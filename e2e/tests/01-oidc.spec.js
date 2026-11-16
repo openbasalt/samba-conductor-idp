@@ -61,16 +61,14 @@ test('a user outside the allowed groups is refused', async ({ page }, info) => {
   await shot(page, info, '05-denied');
 });
 
+// Locked, disabled and expired accounts get the wrong-password message
+// (the account's state is not revealed; the audit log keeps the reason).
 test('refusals: wrong password, locked, disabled, expired account', async ({ page }) => {
   await page.goto('/login');
-  await signIn(page, 'user0004', 'wrong-password');
-  await expect(page.getByTestId('form-text-error')).toContainText('Wrong username or password');
-  await signIn(page, 'locked.user', env.userPassword);
-  await expect(page.getByTestId('form-text-error')).toContainText('locked');
-  await signIn(page, 'disabled.user', env.userPassword);
-  await expect(page.getByTestId('form-text-error')).toContainText('disabled');
-  await signIn(page, 'expired.account', env.userPassword);
-  await expect(page.getByTestId('form-text-error')).toContainText('expired');
+  for (const user of ['user0004', 'locked.user', 'disabled.user', 'expired.account']) {
+    await signIn(page, user, user === 'user0004' ? 'wrong-password' : env.userPassword);
+    await expect(page.getByTestId('form-text-error')).toContainText('Wrong username or password');
+  }
 });
 
 test('expired and must-change passwords go to a change page that needs the old password', async ({ page }, info) => {
