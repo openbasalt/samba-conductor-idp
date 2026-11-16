@@ -72,6 +72,11 @@ policy = "optional"
 backend = "local"
 # conductor_socket = "/run/conductor/mfa.sock"
 admin_enrollment_requires_link = true
+# How users who are not administrators set up 2FA (local backend):
+# "link" (default): only with a one-time link from an administrator
+# (conductor-idp enroll-link, or the admin pages). "self": right after a
+# password verified within the last 10 minutes (trust on first use).
+enrollment = "link"
 issuer = "Samba Conductor IdP"
 
 [keys]
@@ -98,6 +103,10 @@ per_ip_per_minute = 30        # per IPv4 address, per IPv6 /64
 account_failures = 5          # keep below the domain's lockout threshold
 account_window_minutes = 15
 token_per_ip_per_minute = 120
+# Wrong second factors per account (any session or address) within the
+# window lock that account's second factor until the window passes.
+mfa_failures = 10
+mfa_window_minutes = 60
 
 [state]
 database = "/var/lib/conductor-idp/idp.db"

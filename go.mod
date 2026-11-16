@@ -15,6 +15,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/mattermost/xml-roundtrip-validator v0.1.0
 	github.com/openbasalt/samba-conductor-ad v0.0.0-20261113200708-1932970a636d
+	github.com/rs/cors v1.11.1
 	github.com/russellhaering/goxmldsig v1.6.1
 	github.com/zitadel/oidc/v3 v3.51.14
 	modernc.org/sqlite v1.60.1
@@ -40,7 +41,6 @@ require (
 	github.com/muhlemmer/httpforwarded v0.1.0 // indirect
 	github.com/ncruces/go-strftime v1.0.0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
-	github.com/rs/cors v1.11.1 // indirect
 	github.com/zitadel/schema v1.3.2 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/otel v1.46.0 // indirect

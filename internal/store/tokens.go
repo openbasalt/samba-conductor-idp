@@ -27,12 +27,15 @@ type AuthRequest struct {
 	Subject             string
 	AuthTime            time.Time
 	AMR                 []string
-	CreatedAt           time.Time
-	ExpiresAt           time.Time
+	// PwdSet is the account's pwdLastSet when the password was verified
+	// (0: unknown, a row written before it was recorded).
+	PwdSet    int64
+	CreatedAt time.Time
+	ExpiresAt time.Time
 }
 
 const authReqCols = `id, client_id, redirect_uri, state, nonce, scopes, response_type, response_mode, code_challenge,
-	code_challenge_method, prompt, max_age, login_hint, ui_locales, browser_hash, subject, auth_time, amr, created_at, expires_at`
+	code_challenge_method, prompt, max_age, login_hint, ui_locales, browser_hash, subject, auth_time, amr, created_at, expires_at, pwd_set`
 
 // CreateAuthRequest stores a validated request.
 func (s *Store) CreateAuthRequest(ctx context.Context, r *AuthRequest) error {
@@ -40,10 +43,10 @@ func (s *Store) CreateAuthRequest(ctx context.Context, r *AuthRequest) error {
 	if r.MaxAge != nil {
 		maxAge = *r.MaxAge
 	}
-	_, err := s.db.ExecContext(ctx, `INSERT INTO auth_requests(`+authReqCols+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+	_, err := s.db.ExecContext(ctx, `INSERT INTO auth_requests(`+authReqCols+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		r.ID, r.ClientID, r.RedirectURI, r.State, r.Nonce, toJSON(nz(r.Scopes)), r.ResponseType, r.ResponseMode, r.CodeChallenge,
 		r.CodeChallengeMethod, toJSON(nz(r.Prompt)), maxAge, r.LoginHint, r.UILocales, r.BrowserHash, r.Subject, nanos(r.AuthTime),
-		toJSON(nz(r.AMR)), nanos(r.CreatedAt), nanos(r.ExpiresAt))
+		toJSON(nz(r.AMR)), nanos(r.CreatedAt), nanos(r.ExpiresAt), r.PwdSet)
 	return err
 }
 
@@ -55,7 +58,7 @@ func (s *Store) GetAuthRequest(ctx context.Context, id string) (*AuthRequest, er
 	var authTime, created, expires int64
 	err := s.db.QueryRowContext(ctx, `SELECT `+authReqCols+` FROM auth_requests WHERE id = ?`, id).Scan(
 		&r.ID, &r.ClientID, &r.RedirectURI, &r.State, &r.Nonce, &scopes, &r.ResponseType, &r.ResponseMode, &r.CodeChallenge,
-		&r.CodeChallengeMethod, &prompt, &maxAge, &r.LoginHint, &r.UILocales, &r.BrowserHash, &r.Subject, &authTime, &amr, &created, &expires)
+		&r.CodeChallengeMethod, &prompt, &maxAge, &r.LoginHint, &r.UILocales, &r.BrowserHash, &r.Subject, &authTime, &amr, &created, &expires, &r.PwdSet)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -79,10 +82,11 @@ func (s *Store) BindAuthRequest(ctx context.Context, id, browserHash string) err
 	return oneRow(res, err)
 }
 
-// CompleteAuthRequest records the authenticated user (once).
-func (s *Store) CompleteAuthRequest(ctx context.Context, id, subject string, authTime time.Time, amr []string) error {
-	res, err := s.db.ExecContext(ctx, `UPDATE auth_requests SET subject = ?, auth_time = ?, amr = ? WHERE id = ? AND subject = '' AND expires_at > ?`,
-		subject, nanos(authTime), toJSON(nz(amr)), id, nanos(s.now()))
+// CompleteAuthRequest records the authenticated user (once), with the
+// account's pwdLastSet at sign-in.
+func (s *Store) CompleteAuthRequest(ctx context.Context, id, subject string, authTime time.Time, amr []string, pwdSet int64) error {
+	res, err := s.db.ExecContext(ctx, `UPDATE auth_requests SET subject = ?, auth_time = ?, amr = ?, pwd_set = ? WHERE id = ? AND subject = '' AND expires_at > ?`,
+		subject, nanos(authTime), toJSON(nz(amr)), pwdSet, id, nanos(s.now()))
 	return oneRow(res, err)
 }
 
@@ -136,12 +140,14 @@ func (s *Store) ConsumeAuthCode(ctx context.Context, codeHash string) (string, e
 
 // AccessToken is an opaque access token's server-side row.
 type AccessToken struct {
-	ID        string
-	ChainID   string
-	ClientID  string
-	Subject   string
-	Scopes    []string
-	Audience  []string
+	ID       string
+	ChainID  string
+	ClientID string
+	Subject  string
+	Scopes   []string
+	Audience []string
+	// PwdSet: see AuthRequest.PwdSet.
+	PwdSet    int64
 	CreatedAt time.Time
 	ExpiresAt time.Time
 	RevokedAt time.Time
@@ -149,9 +155,9 @@ type AccessToken struct {
 
 // CreateAccessToken stores an access token.
 func (s *Store) CreateAccessToken(ctx context.Context, t *AccessToken) error {
-	_, err := s.db.ExecContext(ctx, `INSERT INTO access_tokens(id, chain_id, client_id, subject, scopes, audience, created_at, expires_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, t.ID, t.ChainID, t.ClientID, t.Subject, toJSON(nz(t.Scopes)), toJSON(nz(t.Audience)),
-		nanos(t.CreatedAt), nanos(t.ExpiresAt))
+	_, err := s.db.ExecContext(ctx, `INSERT INTO access_tokens(id, chain_id, client_id, subject, scopes, audience, created_at, expires_at, pwd_set)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, t.ID, t.ChainID, t.ClientID, t.Subject, toJSON(nz(t.Scopes)), toJSON(nz(t.Audience)),
+		nanos(t.CreatedAt), nanos(t.ExpiresAt), t.PwdSet)
 	return err
 }
 
@@ -160,8 +166,8 @@ func (s *Store) GetAccessToken(ctx context.Context, id string) (*AccessToken, er
 	var t AccessToken
 	var scopes, aud string
 	var created, expires, revoked int64
-	err := s.db.QueryRowContext(ctx, `SELECT id, chain_id, client_id, subject, scopes, audience, created_at, expires_at, revoked_at
-		FROM access_tokens WHERE id = ?`, id).Scan(&t.ID, &t.ChainID, &t.ClientID, &t.Subject, &scopes, &aud, &created, &expires, &revoked)
+	err := s.db.QueryRowContext(ctx, `SELECT id, chain_id, client_id, subject, scopes, audience, created_at, expires_at, revoked_at, pwd_set
+		FROM access_tokens WHERE id = ?`, id).Scan(&t.ID, &t.ChainID, &t.ClientID, &t.Subject, &scopes, &aud, &created, &expires, &revoked, &t.PwdSet)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -181,15 +187,17 @@ func (s *Store) RevokeAccessToken(ctx context.Context, id string) error {
 
 // RefreshToken is a stored (hashed) refresh token.
 type RefreshToken struct {
-	ID             string
-	ChainID        string
-	TokenHash      string
-	ClientID       string
-	Subject        string
-	Scopes         []string
-	Audience       []string
-	AMR            []string
-	AuthTime       time.Time
+	ID        string
+	ChainID   string
+	TokenHash string
+	ClientID  string
+	Subject   string
+	Scopes    []string
+	Audience  []string
+	AMR       []string
+	AuthTime  time.Time
+	// PwdSet: see AuthRequest.PwdSet (carried along the chain).
+	PwdSet         int64
 	CreatedAt      time.Time
 	ExpiresAt      time.Time
 	ChainExpiresAt time.Time
@@ -200,9 +208,9 @@ type RefreshToken struct {
 // CreateRefreshToken stores a refresh token.
 func (s *Store) CreateRefreshToken(ctx context.Context, t *RefreshToken) error {
 	_, err := s.db.ExecContext(ctx, `INSERT INTO refresh_tokens(id, chain_id, token_hash, client_id, subject, scopes, audience, amr,
-		auth_time, created_at, expires_at, chain_expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		auth_time, created_at, expires_at, chain_expires_at, pwd_set) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		t.ID, t.ChainID, t.TokenHash, t.ClientID, t.Subject, toJSON(nz(t.Scopes)), toJSON(nz(t.Audience)), toJSON(nz(t.AMR)),
-		nanos(t.AuthTime), nanos(t.CreatedAt), nanos(t.ExpiresAt), nanos(t.ChainExpiresAt))
+		nanos(t.AuthTime), nanos(t.CreatedAt), nanos(t.ExpiresAt), nanos(t.ChainExpiresAt), t.PwdSet)
 	return err
 }
 
@@ -212,8 +220,8 @@ func (s *Store) GetRefreshTokenByHash(ctx context.Context, hash string) (*Refres
 	var scopes, aud, amr string
 	var authTime, created, expires, chainExp, rotated, revoked int64
 	err := s.db.QueryRowContext(ctx, `SELECT id, chain_id, token_hash, client_id, subject, scopes, audience, amr, auth_time, created_at,
-		expires_at, chain_expires_at, rotated_at, revoked_at FROM refresh_tokens WHERE token_hash = ?`, hash).Scan(
-		&t.ID, &t.ChainID, &t.TokenHash, &t.ClientID, &t.Subject, &scopes, &aud, &amr, &authTime, &created, &expires, &chainExp, &rotated, &revoked)
+		expires_at, chain_expires_at, rotated_at, revoked_at, pwd_set FROM refresh_tokens WHERE token_hash = ?`, hash).Scan(
+		&t.ID, &t.ChainID, &t.TokenHash, &t.ClientID, &t.Subject, &scopes, &aud, &amr, &authTime, &created, &expires, &chainExp, &rotated, &revoked, &t.PwdSet)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}

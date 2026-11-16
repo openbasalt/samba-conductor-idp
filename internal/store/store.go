@@ -189,7 +189,8 @@ func isUnique(err error) bool {
 }
 
 // Purge deletes what has expired: authorization requests, codes, SAML
-// requests, tokens and used enrollment links. Called periodically.
+// requests, tokens, used enrollment links and forgotten browsers. Called
+// periodically.
 func (s *Store) Purge(ctx context.Context) error {
 	now := nanos(s.now())
 	// Refresh chains are kept a day after they end so a late reuse of a
@@ -205,6 +206,7 @@ func (s *Store) Purge(ctx context.Context) error {
 		{`DELETE FROM access_tokens WHERE expires_at < ?`, []any{now}},
 		{`DELETE FROM refresh_tokens WHERE chain_expires_at < ? OR (revoked_at > 0 AND revoked_at < ?)`, []any{grace, grace}},
 		{`DELETE FROM enroll_links WHERE expires_at < ?`, []any{now}},
+		{`DELETE FROM known_devices WHERE expires_at < ?`, []any{now}},
 		{`DELETE FROM signing_keys WHERE retire_at > 0 AND retire_at < ?`, []any{now}},
 	}
 	for _, st := range stmts {

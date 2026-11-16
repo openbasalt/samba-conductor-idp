@@ -67,17 +67,24 @@ func (s stage) String() string {
 type Session struct {
 	mu sync.Mutex
 
-	hash      string // SHA-256 of the cookie value (the map key)
-	stage     stage
-	sam       string // lower-cased sAMAccountName
-	guid      string // objectGUID (OIDC subject)
-	userSID   string
-	name      string
-	csrf      string
-	created   time.Time
-	lastSeen  time.Time
-	expires   time.Time // absolute
-	authTime  time.Time // when the password was verified
+	hash     string // SHA-256 of the cookie value (the map key)
+	stage    stage
+	sam      string // lower-cased sAMAccountName
+	guid     string // objectGUID (OIDC subject)
+	userSID  string
+	name     string
+	csrf     string
+	created  time.Time
+	lastSeen time.Time
+	expires  time.Time // absolute
+	authTime time.Time // when the password was verified
+	// pwdSet is the account's pwdLastSet when the password was verified:
+	// the session ends when AD's value differs (password changed or reset).
+	pwdSet int64
+	// validFrom is the instant a revocation of the account must be later
+	// than to end this session: the sign-in time, or the moment this
+	// session itself changed the second factor (which revokes the others).
+	validFrom time.Time
 	ip        string
 	userAgent string
 

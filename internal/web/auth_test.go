@@ -282,7 +282,7 @@ func (h *harness) signInAdmin(b *browser) []byte {
 }
 
 func TestPolicyRequiredEnrollsUsers(t *testing.T) {
-	h := newHarness(t, harnessOpts{policy: config.MFARequired})
+	h := newHarness(t, harnessOpts{policy: config.MFARequired, enrollment: config.EnrollSelf})
 	c := h.client(registry.ClientInput{FirstParty: true})
 	b := h.browser()
 	b.authorize(c, "openid")
@@ -296,7 +296,7 @@ func TestPolicyRequiredEnrollsUsers(t *testing.T) {
 }
 
 func TestClientRequiresMFAStepUp(t *testing.T) {
-	h := newHarness(t, harnessOpts{policy: config.MFAOptional})
+	h := newHarness(t, harnessOpts{policy: config.MFAOptional, enrollment: config.EnrollSelf})
 	plain := h.client(registry.ClientInput{FirstParty: true, Name: "Plain"})
 	strict := h.client(registry.ClientInput{FirstParty: true, Name: "Strict", RequireMFA: true})
 	b := h.browser()

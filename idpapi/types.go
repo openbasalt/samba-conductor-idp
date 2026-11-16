@@ -618,3 +618,30 @@ type AuditVerify struct {
 	BrokenAt int64  `json:"broken_at"`
 	Reason   string `json:"reason,omitempty"`
 }
+
+// ---- users ----
+
+// UserRevokeParams names the user whose sessions, tokens and consents end
+// (sAMAccountName, DOMAIN\user or user@realm), with an optional reason
+// for the audit log.
+type UserRevokeParams struct {
+	User   string `json:"user"`
+	Reason string `json:"reason,omitempty"`
+}
+
+// Validate implements Params.
+func (p UserRevokeParams) Validate() error {
+	if strings.TrimSpace(p.User) == "" {
+		return errors.New("user: required")
+	}
+	return errors.Join(checkText("user", p.User, 256), checkText("reason", p.Reason, 200))
+}
+
+// UserRevoked is what a revocation ended. Browser sessions end on their
+// next request (every listener checks the stored revocation).
+type UserRevoked struct {
+	User          string    `json:"user"`
+	RefreshTokens int64     `json:"refresh_tokens"`
+	Consents      int64     `json:"consents"`
+	RevokedAt     time.Time `json:"revoked_at"`
+}

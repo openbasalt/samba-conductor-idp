@@ -78,8 +78,10 @@ served.
 
 - `sub` is the AD objectGUID: stable across renames and moves, and not
   the SID, which changes on a domain migration.
-- `preferred_username`, `name`, `email` and `email_verified` (true when
-  AD `mail` is set, since users cannot write `mail` on themselves).
+- `preferred_username`, `name`, `email` and `email_verified`. `email` is
+  given only when no other directory object holds the address (in `mail`,
+  `proxyAddresses` or `userPrincipalName`); `email_verified` is true only
+  for clients registered with it (decisions D18).
 - `groups` from `tokenGroups` (nested, primary group included), rendered
   as names or SIDs per client, optionally limited to a list of SIDs. Only
   what the client's scopes allow is released.
@@ -173,12 +175,19 @@ served.
 
 ## Second factor
 
-- The policy: administrators always need a second factor (an
-  administrator without one enrolls through a one-time link from
-  `conductor-idp enroll-link` or the admin pages); everyone else follows
-  `off`, `optional` or `required`; a client or SP can require it, which
-  steps up an already signed-in user. With the admin pages on a separate
-  listener, enrollment links point at it and only it accepts them.
+- The policy: administrators always need a second factor; everyone else
+  follows `off`, `optional` or `required`; a client or SP can require it,
+  which steps up an already signed-in user. A user without a second factor
+  enrolls through a one-time link from `conductor-idp enroll-link` or the
+  admin pages (`mfa.enrollment = "link"`, the default); with `"self"`,
+  users who are not administrators may enroll right after a password
+  verified within the last ten minutes (decisions D21). With the admin
+  pages on a separate listener, administrator links point at it and only
+  it accepts them; other users' links point at the issuer.
+- Wrong second factors are counted per account (`ratelimit.mfa_failures`
+  within `ratelimit.mfa_window_minutes`), whatever the session or
+  address; past the limit the second factor is refused until the window
+  passes (decisions D20).
 - Backend `local` (default): TOTP secrets in conductor-idp's database,
   sealed with AES-256-GCM under the master key (additional data: the
   objectGUID), and hashed single-use recovery codes.

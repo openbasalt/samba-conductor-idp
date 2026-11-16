@@ -39,6 +39,11 @@ type ClientInput struct {
 	GroupsClaim   string
 	GroupsFilter  []string // SIDs or names
 	RequireMFA    bool
+	// EmailVerified asserts email_verified=true with the email claim (the
+	// administrator vouches that the client may trust AD's mail). nil keeps
+	// the stored value on update (false on create): the management API does
+	// not carry it yet.
+	EmailVerified *bool
 }
 
 // ValidRedirect checks a redirect or post-logout URI: absolute, no
@@ -171,6 +176,7 @@ func BuildClient(ctx context.Context, dir directory.Backend, in ClientInput) (*s
 		Name: name, Kind: in.Kind, RedirectURIs: dedupe(in.RedirectURIs), PostLogoutURIs: dedupe(in.PostLogoutURIs),
 		Scopes: scopes, AllowedGroups: groups, AllowAllUsers: in.AllowAllUsers, FirstParty: in.FirstParty,
 		GroupsClaim: claim, GroupsFilter: filter, RequireMFA: in.RequireMFA, Enabled: true,
+		EmailVerified: in.EmailVerified != nil && *in.EmailVerified,
 	}, nil
 }
 
@@ -225,6 +231,9 @@ func UpdateClient(ctx context.Context, st *store.Store, dir directory.Backend, i
 		return nil, err
 	}
 	c.ID, c.Enabled = old.ID, old.Enabled
+	if in.EmailVerified == nil {
+		c.EmailVerified = old.EmailVerified
+	}
 	if err := st.UpdateClient(ctx, c); err != nil {
 		return nil, err
 	}

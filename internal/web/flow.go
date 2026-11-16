@@ -13,6 +13,7 @@ import (
 	"github.com/zitadel/oidc/v3/pkg/oidc"
 	"github.com/zitadel/oidc/v3/pkg/op"
 
+	"github.com/openbasalt/samba-conductor-idp/internal/directory"
 	"github.com/openbasalt/samba-conductor-idp/internal/oidcp"
 	"github.com/openbasalt/samba-conductor-idp/internal/samlidp"
 	"github.com/openbasalt/samba-conductor-idp/internal/store"
@@ -133,7 +134,7 @@ func (s *Server) finishOIDC(rc *reqCtx, c cont, noInteraction bool) {
 	}
 	u, err := s.sessionUser(ctx, rc.sess)
 	if err != nil {
-		rc.errorPage(http.StatusBadGateway, "err.directory")
+		s.userError(rc, c, err)
 		return
 	}
 	if !oidcp.Allowed(cl, u) {
@@ -188,9 +189,9 @@ func covers(granted, requested []string) bool {
 func (s *Server) completeOIDC(rc *reqCtx, ar *store.AuthRequest, subject string) {
 	ctx := rc.ctx()
 	rc.sess.mu.Lock()
-	authTime := rc.sess.authTime
+	authTime, pwdSet := rc.sess.authTime, rc.sess.pwdSet
 	rc.sess.mu.Unlock()
-	if err := s.store.CompleteAuthRequest(ctx, ar.ID, subject, authTime, rc.sess.amr()); err != nil {
+	if err := s.store.CompleteAuthRequest(ctx, ar.ID, subject, authTime, rc.sess.amr(), pwdSet); err != nil {
 		rc.errorPage(http.StatusBadRequest, "err.flow")
 		return
 	}
@@ -288,7 +289,7 @@ func (s *Server) handleConsent(rc *reqCtx) {
 	}
 	u, err := s.sessionUser(ctx, rc.sess)
 	if err != nil {
-		rc.errorPage(http.StatusBadGateway, "err.directory")
+		s.userError(rc, c, err)
 		return
 	}
 	if !oidcp.Allowed(cl, u) {
@@ -324,7 +325,8 @@ func (s *Server) handleRPLogoutPage(rc *reqCtx) {
 		rc.redirect("/logged-out")
 		return
 	}
-	if t.hinted {
+	if t.hinted && s.hintNamesSession(rc, t.subject) {
+		// The ID token hint names this browser's own user: no confirmation.
 		s.endSessions.take(tok)
 		s.signOut(rc, "rp-initiated logout (id_token_hint) client="+t.client, t.target)
 		return
@@ -334,11 +336,24 @@ func (s *Server) handleRPLogoutPage(rc *reqCtx) {
 		s.leaveTo(rc, t.target)
 		return
 	}
-	// Without an id_token_hint anyone could link here: ask first.
+	// Without an id_token_hint anyone could link here, and a hint for
+	// another user (anyone's own old ID token, even expired) proves nothing
+	// about this browser: ask first.
 	if t.target != "" {
 		rc.formTargets = append(rc.formTargets, t.target)
 	}
 	rc.render(http.StatusOK, "logout_confirm", map[string]any{"T": tok})
+}
+
+// hintNamesSession reports whether an end_session ID token hint's subject
+// is the user of this browser's session.
+func (s *Server) hintNamesSession(rc *reqCtx, subject string) bool {
+	if rc.sess == nil || subject == "" {
+		return false
+	}
+	rc.sess.mu.Lock()
+	defer rc.sess.mu.Unlock()
+	return rc.sess.guid != "" && tokensEqual(rc.sess.guid, subject)
 }
 
 func (s *Server) handleRPLogout(rc *reqCtx) {
@@ -451,7 +466,7 @@ func (s *Server) finishSAML(rc *reqCtx, c cont) {
 	}
 	u, err := s.sessionUser(ctx, rc.sess)
 	if err != nil {
-		rc.errorPage(http.StatusBadGateway, "err.directory")
+		s.userError(rc, c, err)
 		return
 	}
 	if !samlidp.Allowed(sp, u) {
@@ -470,11 +485,7 @@ func (s *Server) finishSAML(rc *reqCtx, c cont) {
 	if err != nil {
 		s.log.Error("SAML response failed", "sp", sp.EntityID, "err", err)
 		s.audit(ctx, rc, "saml.sso", sp.EntityID, truncate(err.Error(), 300), store.ResultFailed)
-		key := "err.saml_request"
-		if errors.Is(err, samlidp.ErrNoNameID) {
-			key = "err.saml_no_nameid"
-		}
-		rc.errorPage(http.StatusBadRequest, key)
+		rc.errorPage(http.StatusBadRequest, samlErrorKey(err))
 		return
 	}
 	if ok, err := s.store.FinishSAMLPending(ctx, p.ID); err != nil || !ok {
@@ -484,6 +495,17 @@ func (s *Server) finishSAML(rc *reqCtx, c cont) {
 	rc.sess.remember(form.Participant)
 	s.audit(ctx, rc, "saml.sso", sp.EntityID, "sp-initiated", store.ResultOK)
 	s.renderSAMLPost(rc, sp.Name, form)
+}
+
+// samlErrorKey is the message of a refused SAML response.
+func samlErrorKey(err error) string {
+	switch {
+	case errors.Is(err, samlidp.ErrNoNameID):
+		return "err.saml_no_nameid"
+	case errors.Is(err, directory.ErrAmbiguousMail):
+		return "err.saml_ambiguous_mail"
+	}
+	return "err.saml_request"
 }
 
 func (s *Server) renderSAMLPost(rc *reqCtx, app string, form *samlidp.Form) {
@@ -502,7 +524,7 @@ func (s *Server) handleSAMLStart(rc *reqCtx) {
 	}
 	u, err := s.sessionUser(ctx, rc.sess)
 	if err != nil {
-		rc.errorPage(http.StatusBadGateway, "err.directory")
+		s.userError(rc, cont{}, err)
 		return
 	}
 	if !samlidp.Allowed(sp, u) {
@@ -519,7 +541,8 @@ func (s *Server) handleSAMLStart(rc *reqCtx) {
 	form, err := s.saml.RespondIdPInitiated(ctx, sp, u, s.samlSession(rc))
 	if err != nil {
 		s.log.Error("SAML IdP-initiated response failed", "sp", sp.EntityID, "err", err)
-		rc.errorPage(http.StatusBadRequest, "err.saml_request")
+		s.audit(ctx, rc, "saml.sso", sp.EntityID, truncate(err.Error(), 300), store.ResultFailed)
+		rc.errorPage(http.StatusBadRequest, samlErrorKey(err))
 		return
 	}
 	rc.sess.remember(form.Participant)
@@ -551,7 +574,7 @@ func (s *Server) handleHome(rc *reqCtx) {
 	ctx := rc.ctx()
 	u, err := s.sessionUser(ctx, rc.sess)
 	if err != nil {
-		rc.errorPage(http.StatusBadGateway, "err.directory")
+		s.userError(rc, cont{}, err)
 		return
 	}
 	var apps []*store.SAMLSP
@@ -571,6 +594,7 @@ func (s *Server) handleHome(rc *reqCtx) {
 	rc.sess.mu.Lock()
 	verified := rc.sess.mfaVerified
 	rc.sess.mu.Unlock()
-	rc.render(http.StatusOK, "home", map[string]any{"Apps": apps, "Enrolled": enrolled, "CanEnroll": s.local != nil && !enrolled,
+	canEnroll := s.local != nil && !enrolled && !s.enrollLinkRequired(admin)
+	rc.render(http.StatusOK, "home", map[string]any{"Apps": apps, "Enrolled": enrolled, "CanEnroll": canEnroll,
 		"Admin": admin && verified && s.surface&surfaceAdmin != 0, "UserName": u.Name(), "SAM": u.SAM, "Mail": u.Mail})
 }

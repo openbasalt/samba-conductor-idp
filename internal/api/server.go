@@ -473,6 +473,9 @@ func (s *Server) dispatch(ctx context.Context, op idpapi.Op, p idpapi.Params) (a
 	case idpapi.OpAuditVerify:
 		v, err := st.VerifyAudit(ctx)
 		return idpapi.AuditVerify{Rows: v.Rows, LastHash: v.LastHash, BrokenAt: v.BrokenAt, Reason: v.Reason}, "", "", err
+
+	case idpapi.OpUserRevoke:
+		return s.userRevoke(ctx, p.(*idpapi.UserRevokeParams))
 	}
 	return nil, "", "", &idpapi.Error{Code: idpapi.CodeBadRequest, Message: "unknown operation"}
 }
@@ -597,6 +600,31 @@ func auditViews(evs []store.AuditEvent) []idpapi.AuditEvent {
 	return out
 }
 
+// ---- users ----
+
+// userRevoke ends what a user holds at the provider: tokens and consents at
+// once, browser sessions on their next request (stored revocation), and
+// the browsers known to the account.
+func (s *Server) userRevoke(ctx context.Context, q *idpapi.UserRevokeParams) (any, string, string, error) {
+	u, err := s.user(ctx, q.User)
+	if err != nil {
+		return nil, q.User, "", err
+	}
+	reason := strings.TrimSpace(q.Reason)
+	if reason == "" {
+		reason = "revoked by an administrator"
+	}
+	rev, err := s.o.Store.RevokeUser(ctx, u.GUID, reason)
+	if err != nil {
+		return nil, u.SAM, "", err
+	}
+	if err := s.o.Store.ForgetDevices(ctx, strings.ToLower(u.SAM)); err != nil {
+		return nil, u.SAM, "", err
+	}
+	detail := fmt.Sprintf("reason=%s refresh_tokens_revoked=%d consents_removed=%d", reason, rev.RefreshTokens, rev.Consents)
+	return idpapi.UserRevoked{User: u.SAM, RefreshTokens: rev.RefreshTokens, Consents: rev.Consents, RevokedAt: rev.RevokedAt}, u.SAM, detail, nil
+}
+
 // ---- previews ----
 
 func (s *Server) user(ctx context.Context, typed string) (*directory.User, error) {
@@ -650,12 +678,21 @@ func (s *Server) clientPreview(ctx context.Context, q *idpapi.ClientPreviewParam
 	if !pv.Allowed {
 		pv.Reason = refusal(u)
 	}
-	claims, err := oidcp.Claims(ctx, s.o.Dir, c, u, c.Scopes)
+	claims, withheld, err := oidcp.Claims(ctx, s.o.Dir, c, u, c.Scopes)
 	if err != nil {
 		return nil, "", "", err
 	}
 	for name, v := range claims {
 		pv.Values = append(pv.Values, idpapi.Value{Name: name, Values: claimValues(v)})
+	}
+	if withheld {
+		// The preview says why the claim is missing.
+		pv.Values = append(pv.Values, idpapi.Value{Name: "email", Values: []string{"(withheld: the address is not unique in the directory)"}})
+	}
+	if c.EmailVerified {
+		if _, ok := claims["email"]; ok {
+			pv.Values = append(pv.Values, idpapi.Value{Name: "email_verified", Values: []string{"true"}})
+		}
 	}
 	sort.Slice(pv.Values, func(i, j int) bool { return pv.Values[i].Name < pv.Values[j].Name })
 	return pv, "", "", nil
@@ -701,17 +738,28 @@ func (s *Server) spPreview(ctx context.Context, q *idpapi.SPPreviewParams) (any,
 	if !pv.Allowed {
 		pv.Reason = refusal(u)
 	}
-	ids, err := s.o.SAML.Values(ctx, sp.NameIDSource, u)
-	if err != nil {
-		return nil, "", "", err
+	ambiguous := func() {
+		if pv.Allowed {
+			pv.Allowed, pv.Reason = false, "the user's mail is not unique in the directory (sign-in is refused)"
+		}
 	}
-	if len(ids) == 1 {
+	ids, err := s.o.SAML.Values(ctx, sp.NameIDSource, u)
+	switch {
+	case errors.Is(err, directory.ErrAmbiguousMail):
+		ambiguous()
+	case err != nil:
+		return nil, "", "", err
+	case len(ids) == 1:
 		pv.NameID = ids[0]
-	} else if pv.Allowed {
+	case pv.Allowed:
 		pv.Allowed, pv.Reason = false, "the user has no value for the NameID source "+sp.NameIDSource
 	}
 	for _, a := range sp.Attributes {
 		vals, err := s.o.SAML.Values(ctx, a.Source, u)
+		if errors.Is(err, directory.ErrAmbiguousMail) {
+			ambiguous()
+			vals, err = nil, nil
+		}
 		if err != nil {
 			return nil, "", "", err
 		}

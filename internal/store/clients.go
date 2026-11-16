@@ -37,9 +37,13 @@ type Client struct {
 	FirstParty bool
 	// GroupsClaim is none, names or sids; GroupsFilter (SIDs) limits the
 	// groups put in the claim (empty = every group of the user).
-	GroupsClaim     string
-	GroupsFilter    []string
-	RequireMFA      bool
+	GroupsClaim  string
+	GroupsFilter []string
+	RequireMFA   bool
+	// EmailVerified asserts email_verified=true with the email claim. Off
+	// by default: AD does not keep mail unique or prove it belongs to the
+	// account holder, so only clients that decided to trust it opt in.
+	EmailVerified   bool
 	Enabled         bool
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
@@ -50,15 +54,15 @@ type Client struct {
 func (c *Client) Public() bool { return c.Kind == ClientPublic }
 
 const clientCols = `id, name, kind, secret_hash, redirect_uris, post_logout_uris, scopes, allowed_groups, allow_all_users,
-	first_party, groups_claim, groups_filter, require_mfa, enabled, created_at, updated_at, secret_rotated_at`
+	first_party, groups_claim, groups_filter, require_mfa, enabled, created_at, updated_at, secret_rotated_at, email_verified`
 
 func scanClient(row interface{ Scan(...any) error }) (*Client, error) {
 	var c Client
 	var redirect, postLogout, scopes, groups, filter string
-	var allowAll, firstParty, mfa, enabled int
+	var allowAll, firstParty, mfa, enabled, emailVerified int
 	var created, updated, rotated int64
 	if err := row.Scan(&c.ID, &c.Name, &c.Kind, &c.SecretHash, &redirect, &postLogout, &scopes, &groups, &allowAll,
-		&firstParty, &c.GroupsClaim, &filter, &mfa, &enabled, &created, &updated, &rotated); err != nil {
+		&firstParty, &c.GroupsClaim, &filter, &mfa, &enabled, &created, &updated, &rotated, &emailVerified); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
 		}
@@ -67,6 +71,7 @@ func scanClient(row interface{ Scan(...any) error }) (*Client, error) {
 	c.RedirectURIs, c.PostLogoutURIs, c.Scopes = strs(redirect), strs(postLogout), strs(scopes)
 	c.AllowedGroups, c.GroupsFilter = strs(groups), strs(filter)
 	c.AllowAllUsers, c.FirstParty, c.RequireMFA, c.Enabled = allowAll == 1, firstParty == 1, mfa == 1, enabled == 1
+	c.EmailVerified = emailVerified == 1
 	c.CreatedAt, c.UpdatedAt, c.SecretRotatedAt = fromNanos(created), fromNanos(updated), fromNanos(rotated)
 	return &c, nil
 }
@@ -78,10 +83,10 @@ func (s *Store) CreateClient(ctx context.Context, c *Client) error {
 	if c.SecretHash != "" {
 		c.SecretRotatedAt = now
 	}
-	_, err := s.db.ExecContext(ctx, `INSERT INTO clients(`+clientCols+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+	_, err := s.db.ExecContext(ctx, `INSERT INTO clients(`+clientCols+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		c.ID, c.Name, c.Kind, c.SecretHash, toJSON(nz(c.RedirectURIs)), toJSON(nz(c.PostLogoutURIs)), toJSON(nz(c.Scopes)),
 		toJSON(nz(c.AllowedGroups)), boolInt(c.AllowAllUsers), boolInt(c.FirstParty), c.GroupsClaim, toJSON(nz(c.GroupsFilter)),
-		boolInt(c.RequireMFA), boolInt(c.Enabled), nanos(c.CreatedAt), nanos(c.UpdatedAt), nanos(c.SecretRotatedAt))
+		boolInt(c.RequireMFA), boolInt(c.Enabled), nanos(c.CreatedAt), nanos(c.UpdatedAt), nanos(c.SecretRotatedAt), boolInt(c.EmailVerified))
 	if isUnique(err) {
 		return ErrConflict
 	}
@@ -124,10 +129,10 @@ func (s *Store) UpdateClient(ctx context.Context, c *Client) error {
 	c.UpdatedAt = s.now()
 	res, err := s.db.ExecContext(ctx, `UPDATE clients SET name = ?, redirect_uris = ?, post_logout_uris = ?, scopes = ?,
 		allowed_groups = ?, allow_all_users = ?, first_party = ?, groups_claim = ?, groups_filter = ?, require_mfa = ?,
-		enabled = ?, updated_at = ? WHERE id = ?`,
+		enabled = ?, updated_at = ?, email_verified = ? WHERE id = ?`,
 		c.Name, toJSON(nz(c.RedirectURIs)), toJSON(nz(c.PostLogoutURIs)), toJSON(nz(c.Scopes)), toJSON(nz(c.AllowedGroups)),
 		boolInt(c.AllowAllUsers), boolInt(c.FirstParty), c.GroupsClaim, toJSON(nz(c.GroupsFilter)), boolInt(c.RequireMFA),
-		boolInt(c.Enabled), nanos(c.UpdatedAt), c.ID)
+		boolInt(c.Enabled), nanos(c.UpdatedAt), boolInt(c.EmailVerified), c.ID)
 	return oneRow(res, err)
 }
 

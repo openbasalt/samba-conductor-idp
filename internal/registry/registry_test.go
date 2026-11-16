@@ -62,3 +62,31 @@ func TestBuildClientRules(t *testing.T) {
 		t.Fatal("group name accepted without a directory")
 	}
 }
+
+// email_verified: off unless asked; an update without the field (the
+// management API) keeps the stored value.
+func TestClientEmailVerified(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(ctx, ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = st.Close() }()
+	in := ClientInput{Name: "RP", Kind: store.ClientConfidential, RedirectURIs: []string{"https://rp.test/cb"}, AllowAllUsers: true}
+	c, _, err := CreateClient(ctx, st, nil, in)
+	if err != nil || c.EmailVerified {
+		t.Fatalf("default: %+v %v", c, err)
+	}
+	yes := true
+	in.EmailVerified = &yes
+	if c, err = UpdateClient(ctx, st, nil, c.ID, in); err != nil || !c.EmailVerified {
+		t.Fatalf("set: %+v %v", c, err)
+	}
+	in.EmailVerified = nil
+	if c, err = UpdateClient(ctx, st, nil, c.ID, in); err != nil || !c.EmailVerified {
+		t.Fatalf("kept: %+v %v", c, err)
+	}
+	if got, _ := st.GetClient(ctx, c.ID); !got.EmailVerified {
+		t.Fatal("not stored")
+	}
+}

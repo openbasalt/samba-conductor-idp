@@ -2,6 +2,13 @@
 {{define "content"}}{{template "admin-tabs" .}}
 <div class="card">
   <h1>{{t "admin.users.title"}}</h1>
+  <form method="post" action="/admin/users/revoke" class="card">
+    {{template "csrf" .}}
+    <h2>{{t "admin.users.revoke"}}</h2>
+    <p class="small muted">{{t "admin.users.revoke_hint"}}</p>
+    <div class="field"><label for="u-revoke">{{t "signin.username"}}</label><input id="u-revoke" name="username" type="text" required autocomplete="off" data-e2e="users-input-revoke"></div>
+    <button class="btn btn-danger" type="submit" data-e2e="users-btn-revoke">{{t "admin.users.revoke"}}</button>
+  </form>
   {{if not .D.Local}}<p class="muted" data-e2e="users-text-conductor">{{t "admin.users.conductor"}}</p>{{else}}
   {{if .D.Link}}<div class="alert-info" data-e2e="users-text-link"><p>{{t "admin.users.link_for" .D.LinkUser}}</p><p class="mono secret">{{.D.Link}}</p><p class="small">{{t "admin.users.link_once"}}</p></div>{{end}}
   <form method="post" action="/admin/users/mfa-reset" class="card">

@@ -31,6 +31,22 @@ const (
 	MFARequired = "required"
 )
 
+// Enrollment policies: how a user without a second factor sets one up
+// with the local backend.
+const (
+	// EnrollLink: only through a one-time enrollment link that an
+	// administrator issues (the default). A password alone never binds an
+	// authenticator.
+	EnrollLink = "link"
+	// EnrollSelf: right after a password verified within the last
+	// EnrollSelfMaxAge (trust on first use), or with a link.
+	EnrollSelf = "self"
+)
+
+// EnrollSelfMaxAge bounds how old the password verification of a session
+// may be for self-enrollment (EnrollSelf).
+const EnrollSelfMaxAge = 10 * time.Minute
+
 // MFA backends.
 const (
 	// MFABackendLocal keeps TOTP secrets and recovery codes in the idp's
@@ -203,6 +219,15 @@ func (c *Config) EnrollURL() string {
 	return c.Issuer()
 }
 
+// EnrollLinkURL is the base URL of an enrollment link: EnrollURL for an
+// administrator, the issuer (the public sign-in page) for anyone else.
+func (c *Config) EnrollLinkURL(admin bool) string {
+	if admin {
+		return c.EnrollURL()
+	}
+	return c.Issuer()
+}
+
 // Domain is how the AD domain is reached.
 type Domain struct {
 	Realm string `toml:"realm"`
@@ -252,6 +277,11 @@ type MFA struct {
 	// only through a one-time link (`conductor-idp enroll-link`), so a
 	// stolen administrator password is not enough (default true).
 	AdminEnrollmentRequiresLink *bool `toml:"admin_enrollment_requires_link"`
+	// Enrollment is how users who are not administrators set up a second
+	// factor with the local backend: "link" (default: a one-time link from
+	// an administrator) or "self" (right after a recent password
+	// verification). Administrators follow AdminEnrollmentRequiresLink.
+	Enrollment string `toml:"enrollment"`
 	// Issuer shown in authenticator apps.
 	Issuer string `toml:"issuer"`
 }
@@ -291,6 +321,11 @@ type RateLimit struct {
 	// TokenPerIPPerMinute bounds the token, revocation and userinfo
 	// endpoints per client address.
 	TokenPerIPPerMinute int `toml:"token_per_ip_per_minute"`
+	// MFAFailures wrong second factors per account within MFAWindowMinutes
+	// lock that account's second factor until the oldest leaves the
+	// window (whatever the address or session).
+	MFAFailures      int `toml:"mfa_failures"`
+	MFAWindowMinutes int `toml:"mfa_window_minutes"`
 }
 
 // State is where the database lives.
@@ -341,17 +376,18 @@ func (c *Config) AllowedOrigins() []string {
 // Default returns the defaults every file starts from.
 func Default() *Config {
 	return &Config{
-		Server:    Server{Listen: ":9443"},
-		Roles:     Roles{CacheSeconds: 60},
-		MFA:       MFA{Policy: MFAOptional, Backend: MFABackendLocal, Issuer: "Samba Conductor IdP"},
-		Keys:      Keys{RotateDays: 90, OverlapHours: 48},
-		Tokens:    Tokens{IDTokenMinutes: 5, AccessTokenMinutes: 10, RefreshTokenHours: 24 * 30, RefreshIdleHours: 24 * 7},
-		Session:   Session{IdleMinutes: 60, AbsoluteHours: 8},
-		RateLimit: RateLimit{PerIPPerMinute: 30, AccountFailures: 5, AccountWindowMinutes: 15, TokenPerIPPerMinute: 120},
-		State:     State{Database: "/var/lib/conductor-idp/idp.db"},
-		UI:        UI{DefaultLanguage: "en", ProductName: "Samba Conductor"},
-		SAML:      SAML{AssertionMinutes: 5},
-		API:       API{Socket: "/run/conductor-idp/api.sock"},
+		Server:  Server{Listen: ":9443"},
+		Roles:   Roles{CacheSeconds: 60},
+		MFA:     MFA{Policy: MFAOptional, Backend: MFABackendLocal, Enrollment: EnrollLink, Issuer: "Samba Conductor IdP"},
+		Keys:    Keys{RotateDays: 90, OverlapHours: 48},
+		Tokens:  Tokens{IDTokenMinutes: 5, AccessTokenMinutes: 10, RefreshTokenHours: 24 * 30, RefreshIdleHours: 24 * 7},
+		Session: Session{IdleMinutes: 60, AbsoluteHours: 8},
+		RateLimit: RateLimit{PerIPPerMinute: 30, AccountFailures: 5, AccountWindowMinutes: 15, TokenPerIPPerMinute: 120,
+			MFAFailures: 10, MFAWindowMinutes: 60},
+		State: State{Database: "/var/lib/conductor-idp/idp.db"},
+		UI:    UI{DefaultLanguage: "en", ProductName: "Samba Conductor"},
+		SAML:  SAML{AssertionMinutes: 5},
+		API:   API{Socket: "/run/conductor-idp/api.sock"},
 	}
 }
 
@@ -431,6 +467,9 @@ func (c *Config) Validate() error {
 	default:
 		bad("mfa.backend must be local or conductor")
 	}
+	if c.MFA.Enrollment != EnrollLink && c.MFA.Enrollment != EnrollSelf {
+		bad("mfa.enrollment must be link or self")
+	}
 	if c.MFA.Issuer == "" || len(c.MFA.Issuer) > 64 || strings.ContainsAny(c.MFA.Issuer, ":") {
 		bad("mfa.issuer must be 1-64 characters without ':'")
 	}
@@ -457,8 +496,12 @@ func (c *Config) Validate() error {
 		bad("session.absolute_hours must be 1-24")
 	}
 	r := c.RateLimit
-	if r.PerIPPerMinute < 1 || r.AccountFailures < 1 || r.AccountWindowMinutes < 1 || r.TokenPerIPPerMinute < 1 {
+	if r.PerIPPerMinute < 1 || r.AccountFailures < 1 || r.AccountWindowMinutes < 1 || r.TokenPerIPPerMinute < 1 ||
+		r.MFAFailures < 1 || r.MFAWindowMinutes < 1 {
 		bad("ratelimit values must be positive")
+	}
+	if r.MFAWindowMinutes > 24*60 {
+		bad("ratelimit.mfa_window_minutes must be at most 1440 (a second factor is never locked for longer)")
 	}
 	if !filepath.IsAbs(c.State.Database) {
 		bad("state.database must be absolute")
@@ -628,6 +671,10 @@ func (c *Config) AbsoluteTimeout() time.Duration {
 func (c *Config) RoleCacheTTL() time.Duration {
 	return time.Duration(c.Roles.CacheSeconds) * time.Second
 }
+
+// UserEnrollmentLinkRequired reports whether users who are not
+// administrators enroll only by link.
+func (c *Config) UserEnrollmentLinkRequired() bool { return c.MFA.Enrollment != EnrollSelf }
 
 // AdminEnrollmentLinkRequired reports whether admins enroll only by link.
 func (c *Config) AdminEnrollmentLinkRequired() bool {

@@ -83,7 +83,7 @@ func (s *Server) handleAdminClients(rc *reqCtx) {
 type clientForm struct {
 	Name, Kind, Redirects, PostLogout, Groups, GroupsClaim, GroupsFilter string
 	Scopes                                                               []string
-	AllowAll, FirstParty, RequireMFA                                     bool
+	AllowAll, FirstParty, RequireMFA, EmailVerified                      bool
 }
 
 func (rc *reqCtx) clientInput() (registry.ClientInput, clientForm) {
@@ -91,10 +91,10 @@ func (rc *reqCtx) clientInput() (registry.ClientInput, clientForm) {
 	f := clientForm{Name: rc.form("name"), Kind: rc.form("kind"), Redirects: rc.form("redirect_uris"),
 		PostLogout: rc.form("post_logout_uris"), Groups: rc.form("groups"), GroupsClaim: rc.form("groups_claim"),
 		GroupsFilter: rc.form("groups_filter"), Scopes: rc.r.PostForm["scopes"], AllowAll: rc.checked("allow_all"),
-		FirstParty: rc.checked("first_party"), RequireMFA: rc.checked("require_mfa")}
+		FirstParty: rc.checked("first_party"), RequireMFA: rc.checked("require_mfa"), EmailVerified: rc.checked("email_verified")}
 	return registry.ClientInput{Name: f.Name, Kind: f.Kind, RedirectURIs: lines(f.Redirects), PostLogoutURIs: lines(f.PostLogout),
 		Scopes: f.Scopes, Groups: lines(f.Groups), AllowAllUsers: f.AllowAll, FirstParty: f.FirstParty,
-		GroupsClaim: f.GroupsClaim, GroupsFilter: lines(f.GroupsFilter), RequireMFA: f.RequireMFA}, f
+		GroupsClaim: f.GroupsClaim, GroupsFilter: lines(f.GroupsFilter), RequireMFA: f.RequireMFA, EmailVerified: &f.EmailVerified}, f
 }
 
 func (s *Server) clientFormData(rc *reqCtx, f clientForm, errMsg string, editing *store.Client) map[string]any {
@@ -136,7 +136,7 @@ func (s *Server) handleAdminClient(rc *reqCtx) {
 	ctx := rc.ctx()
 	f := clientForm{Name: c.Name, Kind: c.Kind, Redirects: strings.Join(c.RedirectURIs, "\n"), PostLogout: strings.Join(c.PostLogoutURIs, "\n"),
 		Groups: strings.Join(c.AllowedGroups, "\n"), GroupsClaim: c.GroupsClaim, GroupsFilter: strings.Join(c.GroupsFilter, "\n"),
-		Scopes: c.Scopes, AllowAll: c.AllowAllUsers, FirstParty: c.FirstParty, RequireMFA: c.RequireMFA}
+		Scopes: c.Scopes, AllowAll: c.AllowAllUsers, FirstParty: c.FirstParty, RequireMFA: c.RequireMFA, EmailVerified: c.EmailVerified}
 	d := s.clientFormData(rc, f, "", c)
 	d["GroupLabels"] = s.groupLabels(ctx, c.AllowedGroups)
 	d["Issuer"] = s.cfg.Issuer()
@@ -503,8 +503,15 @@ func (s *Server) handleAdminMFAReset(rc *reqCtx) {
 		rc.errorPage(http.StatusInternalServerError, "err.internal")
 		return
 	}
-	n := s.sess.destroyUser(u.GUID)
-	s.audit(rc.ctx(), rc, "admin.mfa_reset", u.SAM, "removed="+boolStr(removed)+" sessions_ended="+strconv.Itoa(n), store.ResultOK)
+	// A second-factor reset ends the account's sessions on every listener,
+	// its tokens and its consents.
+	rev, n, err := s.revokeUser(rc.ctx(), u, "second factor reset")
+	if err != nil {
+		s.log.Error("revoking after a 2FA reset failed", "user", u.SAM, "err", err)
+		rc.errorPage(http.StatusInternalServerError, "err.internal")
+		return
+	}
+	s.audit(rc.ctx(), rc, "admin.mfa_reset", u.SAM, "removed="+boolStr(removed)+" "+revokeDetail("second factor reset", rev, n), store.ResultOK)
 	if removed {
 		rc.flashOK("admin.mfa_reset_done", u.SAM)
 	} else {
@@ -513,7 +520,32 @@ func (s *Server) handleAdminMFAReset(rc *reqCtx) {
 	rc.redirect("/admin/users")
 }
 
-// EnrollLinkTTL is how long an administrator enrollment link works.
+// handleAdminRevoke ends a user's sessions on every listener and revokes
+// their tokens and consents (after a compromise, before or besides a
+// password reset in AD).
+func (s *Server) handleAdminRevoke(rc *reqCtx) {
+	u, ok := s.adminUser(rc)
+	if !ok {
+		return
+	}
+	rev, n, err := s.revokeUser(rc.ctx(), u, "revoked by an administrator")
+	if err != nil {
+		s.log.Error("revoking a user failed", "user", u.SAM, "err", err)
+		rc.errorPage(http.StatusInternalServerError, "err.internal")
+		return
+	}
+	s.audit(rc.ctx(), rc, "user.revoke", u.SAM, revokeDetail("revoked by an administrator", rev, n), store.ResultOK)
+	rc.flashOK("admin.revoke_done", u.SAM)
+	rc.redirect("/admin/users")
+}
+
+// revokeDetail is the audit detail of a revocation.
+func revokeDetail(reason string, rev store.UserRevocation, sessions int) string {
+	return "reason=" + reason + " sessions_ended=" + strconv.Itoa(sessions) + " refresh_tokens_revoked=" +
+		strconv.FormatInt(rev.RefreshTokens, 10) + " consents_removed=" + strconv.FormatInt(rev.Consents, 10)
+}
+
+// EnrollLinkTTL is how long an enrollment link works.
 const EnrollLinkTTL = 24 * time.Hour
 
 func (s *Server) handleAdminEnrollLink(rc *reqCtx) {
@@ -534,7 +566,12 @@ func (s *Server) handleAdminEnrollLink(rc *reqCtx) {
 		return
 	}
 	s.audit(rc.ctx(), rc, "admin.enroll_link", u.SAM, "valid 24 h", store.ResultOK)
-	link := s.cfg.EnrollURL() + "/login?enroll=" + url.QueryEscape(tok)
+	admin, err := s.userIsAdmin(rc.ctx(), u.GroupSIDs, u.Active())
+	if err != nil {
+		rc.errorPage(http.StatusBadGateway, "err.directory")
+		return
+	}
+	link := s.cfg.EnrollLinkURL(admin) + "/login?enroll=" + url.QueryEscape(tok)
 	rc.render(http.StatusOK, "admin_users", s.adminData(rc, "users", map[string]any{"Local": true, "Link": link, "LinkUser": u.SAM}))
 }
 

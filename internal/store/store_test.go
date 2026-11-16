@@ -164,3 +164,81 @@ func TestOpenRefusesNewerSchema(t *testing.T) {
 	}
 	_ = s3.Close()
 }
+
+func TestRevokeUser(t *testing.T) {
+	s := open(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+	if err := s.CreateClient(ctx, &Client{ID: "cidp_1", Name: "c", Kind: ClientConfidential, GroupsClaim: GroupsNone, Enabled: true}); err != nil {
+		t.Fatal(err)
+	}
+	for i, sub := range []string{"alice", "bob"} {
+		rt := &RefreshToken{ID: sub + "-rt", ChainID: sub + "-chain", TokenHash: sub + "-hash", ClientID: "cidp_1", Subject: sub,
+			AuthTime: now, PwdSet: int64(100 + i), CreatedAt: now, ExpiresAt: now.Add(time.Hour), ChainExpiresAt: now.Add(time.Hour)}
+		if err := s.CreateRefreshToken(ctx, rt); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.CreateAccessToken(ctx, &AccessToken{ID: sub + "-at", ChainID: sub + "-chain", ClientID: "cidp_1", Subject: sub,
+			PwdSet: int64(100 + i), CreatedAt: now, ExpiresAt: now.Add(time.Hour)}); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.SaveConsent(ctx, sub, "cidp_1", []string{"openid"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if at, err := s.UserRevokedAt(ctx, "alice"); err != nil || !at.IsZero() {
+		t.Fatalf("never revoked: %v %v", at, err)
+	}
+	rev, err := s.RevokeUser(ctx, "alice", "test")
+	if err != nil || rev.RefreshTokens != 1 || rev.Consents != 1 {
+		t.Fatalf("%+v %v", rev, err)
+	}
+	if at, _ := s.UserRevokedAt(ctx, "alice"); !at.Equal(rev.RevokedAt) {
+		t.Fatalf("revoked at %v, want %v", at, rev.RevokedAt)
+	}
+	a, _ := s.GetRefreshTokenByHash(ctx, "alice-hash")
+	b, _ := s.GetRefreshTokenByHash(ctx, "bob-hash")
+	if a.RevokedAt.IsZero() || !b.RevokedAt.IsZero() || b.PwdSet != 101 {
+		t.Fatalf("alice %+v bob %+v", a, b)
+	}
+	if at, _ := s.GetAccessToken(ctx, "alice-at"); at.RevokedAt.IsZero() {
+		t.Fatal("access token not revoked")
+	}
+	if g, _ := s.GetConsent(ctx, "bob", "cidp_1"); g == nil {
+		t.Fatal("another user's consent removed")
+	}
+}
+
+func TestKnownDevices(t *testing.T) {
+	s := open(t)
+	ctx := context.Background()
+	if ok, _ := s.KnownDevice(ctx, "alice", "b1"); ok {
+		t.Fatal("unknown browser known")
+	}
+	for i := 0; i < maxKnownDevices+5; i++ {
+		s.SetClock(func() time.Time { return time.Now().UTC().Add(time.Duration(i) * time.Second) })
+		if err := s.RememberDevice(ctx, "alice", "b"+string(rune('a'+i)), time.Hour); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if ok, _ := s.KnownDevice(ctx, "alice", "ba"); ok {
+		t.Fatal("the oldest browser was not forgotten")
+	}
+	last := "b" + string(rune('a'+maxKnownDevices+4))
+	if ok, _ := s.KnownDevice(ctx, "alice", last); !ok {
+		t.Fatal("the newest browser is not known")
+	}
+	if ok, _ := s.KnownDevice(ctx, "bob", last); ok {
+		t.Fatal("known for another account")
+	}
+	if ok, _ := s.KnownDevice(ctx, "alice", ""); ok {
+		t.Fatal("no browser is known")
+	}
+	s.SetClock(func() time.Time { return time.Now().UTC().Add(2 * time.Hour) })
+	if ok, _ := s.KnownDevice(ctx, "alice", last); ok {
+		t.Fatal("expired browser still known")
+	}
+	if err := s.ForgetDevices(ctx, "alice"); err != nil {
+		t.Fatal(err)
+	}
+}

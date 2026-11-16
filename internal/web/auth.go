@@ -26,6 +26,8 @@ var loginMessages = map[string]string{
 	"password_changed": "signin.msg.password_changed",
 	"mfa_required":     "signin.msg.mfa_required",
 	"expired":          "signin.msg.expired",
+	"revoked":          "signin.msg.revoked",
+	"reauth":           "signin.msg.reauth",
 }
 
 // cont is where a sign-in continues once complete: an OIDC authorization
@@ -138,17 +140,57 @@ func cleanLinkToken(t string) string {
 // adminOnly reports whether this is the separate admin listener.
 func (s *Server) adminOnly() bool { return s.surface == surfaceAdmin }
 
-// enrollToken returns a well-formed enrollment link token when this
-// listener accepts administrator enrollment links, else "". With a
-// separate admin listener only that listener accepts them, so an
-// administrator's second factor is set up on the internal origin only;
-// with the admin pages off the public listener still does (there is no
-// other place to enroll).
-func (s *Server) enrollToken(t string) string {
-	if s.surface&surfaceAdmin == 0 && s.cfg.AdminMode() != config.AdminDisabled {
-		return ""
+// enrollToken returns a well-formed enrollment link token, else "". Links
+// of users who are not administrators work on the public listener; whether
+// an administrator's link is accepted here is acceptsAdminLinks.
+func (s *Server) enrollToken(t string) string { return cleanLinkToken(t) }
+
+// acceptsAdminLinks reports whether this listener accepts administrator
+// enrollment links. With a separate admin listener only that listener does,
+// so an administrator's second factor is set up on the internal origin
+// only; with the admin pages off the public listener still does (there is
+// no other place to enroll).
+func (s *Server) acceptsAdminLinks() bool {
+	return s.surface&surfaceAdmin != 0 || s.cfg.AdminMode() == config.AdminDisabled
+}
+
+// offerEnrollLink reports whether the sign-in form carries an enrollment
+// link: a valid one, and on a public listener that does not accept
+// administrator links, only one made for a user who is not an
+// administrator.
+func (s *Server) offerEnrollLink(ctx context.Context, tok string) bool {
+	username, err := s.store.EnrollLinkUser(ctx, LinkHash(tok))
+	if err != nil {
+		return false
 	}
-	return cleanLinkToken(t)
+	if s.acceptsAdminLinks() {
+		return true
+	}
+	u, err := s.dir.UserBySAM(ctx, username)
+	if err != nil {
+		return false
+	}
+	admin, err := s.userIsAdmin(ctx, u.GroupSIDs, u.Active())
+	return err == nil && !admin
+}
+
+// enrollLinkRequired reports whether a user without a second factor may
+// set one up only through a one-time link (mfa.enrollment for users,
+// mfa.admin_enrollment_requires_link for administrators).
+func (s *Server) enrollLinkRequired(admin bool) bool {
+	if admin {
+		return s.cfg.AdminEnrollmentLinkRequired()
+	}
+	return s.cfg.UserEnrollmentLinkRequired()
+}
+
+// recentPassword reports whether the session's password verification is
+// recent enough for enrollment without a link (mfa.enrollment = "self").
+func (s *Server) recentPassword(sess *Session) bool {
+	sess.mu.Lock()
+	at := sess.authTime
+	sess.mu.Unlock()
+	return !at.IsZero() && s.now().Sub(at) <= config.EnrollSelfMaxAge
 }
 
 // LinkHash is the stored form of an enrollment link token.
@@ -220,7 +262,11 @@ func (s *Server) handleLoginPage(rc *reqCtx) {
 // showLogin renders the sign-in form.
 func (s *Server) showLogin(rc *reqCtx, c cont, username string, status int) {
 	rc.ensurePreCookie()
-	d := map[string]any{"C": c.String(), "Username": username, "Enroll": s.enrollToken(rc.r.URL.Query().Get("enroll"))}
+	enroll := s.enrollToken(rc.r.URL.Query().Get("enroll"))
+	if enroll != "" && !s.offerEnrollLink(rc.ctx(), enroll) {
+		enroll = ""
+	}
+	d := map[string]any{"C": c.String(), "Username": username, "Enroll": enroll}
 	if k, ok := loginMessages[rc.r.URL.Query().Get("m")]; ok {
 		d["Notice"] = rc.T(k)
 	}
@@ -292,13 +338,18 @@ func (s *Server) handleLogin(rc *reqCtx) {
 		return
 	}
 	rc.actorHint = sam
-	if s.accountFails.Blocked(sam) {
-		s.audit(ctx, rc, "signin.rate_limited", sam, "per-account limit", store.ResultDenied)
+	known := s.knownBrowser(ctx, rc, sam)
+	if s.signInBlocked(sam, known) {
+		detail := "per-account limit"
+		if known != "" {
+			detail = "per-account limit (known browser)"
+		}
+		s.audit(ctx, rc, "signin.rate_limited", sam, detail, store.ResultDenied)
 		s.loginError(rc, c, http.StatusTooManyRequests, "signin.err.rate_account", typed, enroll)
 		return
 	}
 	if err := s.dir.Authenticate(ctx, sam, password); err != nil {
-		s.loginFailed(rc, ctx, c, sam, typed, enroll, err)
+		s.loginFailed(rc, ctx, c, sam, typed, enroll, known, err)
 		return
 	}
 	u, err := s.dir.UserBySAM(ctx, sam)
@@ -308,7 +359,7 @@ func (s *Server) handleLogin(rc *reqCtx) {
 		s.loginError(rc, c, http.StatusBadGateway, "err.directory", typed, enroll)
 		return
 	}
-	s.accountFails.Reset(sam)
+	s.signInSucceeded(ctx, rc, sam)
 	admin, err := s.userIsAdmin(ctx, u.GroupSIDs, u.Active())
 	if err != nil {
 		s.log.Error("admin check failed", "err", err)
@@ -340,29 +391,44 @@ func (s *Server) handleLogin(rc *reqCtx) {
 	if rc.sess != nil {
 		s.sess.destroy(rc.sess)
 	}
+	now := s.now().UTC()
 	sess := &Session{sam: strings.ToLower(u.SAM), guid: u.GUID, userSID: u.SID.String(), name: u.Name(), ip: rc.ip,
-		userAgent: rc.r.UserAgent(), authTime: s.now().UTC(), admin: admin, adminAt: s.now()}
+		userAgent: rc.r.UserAgent(), authTime: now, validFrom: now, pwdSet: u.PwdLastSet, admin: admin, adminAt: s.now()}
 	need := admin || required || s.flowRequiresMFA(ctx, c)
+	if admin && !s.acceptsAdminLinks() {
+		// An administrator's link works on the admin listener only.
+		enroll = ""
+	}
+	validLink := false
+	if enroll != "" && !enrolled && s.local != nil {
+		validLink, _ = s.store.ValidEnrollLink(ctx, LinkHash(enroll), sess.sam)
+	}
 	switch {
 	case enrolled && (need || policy != config.MFAOff):
 		sess.stage = stageMFA
+	case enrolled:
+		sess.stage = stageFull
 	case need && s.local == nil:
 		s.audit(ctx, rc, "signin.failure", sam, "2FA required but not enrolled (enroll in conductor)", store.ResultDenied)
 		s.loginError(rc, c, http.StatusForbidden, "signin.err.enroll_in_conductor", typed, enroll)
 		return
-	case need:
-		if admin && s.cfg.AdminEnrollmentLinkRequired() {
-			valid := false
-			if enroll != "" {
-				valid, _ = s.store.ValidEnrollLink(ctx, LinkHash(enroll), sess.sam)
-			}
-			if !valid {
-				s.audit(ctx, rc, "signin.failure", sam, "administrator without 2FA and without a valid enrollment link", store.ResultDenied)
-				s.loginError(rc, c, http.StatusForbidden, "signin.err.admin_link", typed, "")
-				return
-			}
-			sess.enrollLink = LinkHash(enroll)
+	case validLink:
+		// Enrollment with an administrator's one-time link (consumed with
+		// the enrollment), required or voluntary.
+		sess.enrollLink = LinkHash(enroll)
+		sess.stage = stageEnroll
+	case need && s.enrollLinkRequired(admin):
+		// No trust on first use: a password alone never binds an
+		// authenticator to the account.
+		key, why := "signin.err.enroll_link", "user without 2FA and without a valid enrollment link"
+		if admin {
+			key, why = "signin.err.admin_link", "administrator without 2FA and without a valid enrollment link"
 		}
+		s.audit(ctx, rc, "signin.failure", sam, why, store.ResultDenied)
+		s.loginError(rc, c, http.StatusForbidden, key, typed, "")
+		return
+	case need:
+		// mfa.enrollment = "self": the password was verified just now.
 		sess.stage = stageEnroll
 	default:
 		sess.stage = stageFull
@@ -411,7 +477,7 @@ func (s *Server) flowRequiresMFA(ctx context.Context, c cont) bool {
 
 // loginFailed maps a refused sign-in to a clear message. Only expired /
 // must-change passwords (proven right by AD) lead to the change page.
-func (s *Server) loginFailed(rc *reqCtx, ctx context.Context, c cont, sam, typed, enroll string, err error) {
+func (s *Server) loginFailed(rc *reqCtx, ctx context.Context, c cont, sam, typed, enroll, known string, err error) {
 	var ae *ad.AuthError
 	if errors.Is(err, ad.ErrKDCNotVerified) {
 		// The KDC accepted the password but its answer could not be proven
@@ -447,21 +513,19 @@ func (s *Server) loginFailed(rc *reqCtx, ctx context.Context, c cont, sam, typed
 		rc.redirect(c.with("/login/password"))
 		return
 	}
+	// Locked, disabled, expired and restricted accounts get the same
+	// message as a wrong password: the KDC may report those states before
+	// the password is proven, and naming them would tell anyone the state
+	// of any account. The audit log keeps the reason.
 	key := "signin.err.invalid"
 	switch ae.Reason {
-	case ad.ReasonAccountLocked:
-		key = "signin.err.locked"
-	case ad.ReasonAccountDisabled:
-		key = "signin.err.disabled"
-	case ad.ReasonAccountExpired:
-		key = "signin.err.account_expired"
-	case ad.ReasonLogonHours, ad.ReasonWorkstationRestricted, ad.ReasonAccountRestricted:
-		key = "signin.err.restricted"
 	case ad.ReasonClockSkew:
 		key = "signin.err.clock"
-	}
-	if key == "signin.err.invalid" {
-		s.accountFails.Fail(sam)
+	case ad.ReasonAccountLocked, ad.ReasonAccountDisabled, ad.ReasonAccountExpired,
+		ad.ReasonLogonHours, ad.ReasonWorkstationRestricted, ad.ReasonAccountRestricted:
+		// Not a password guess (and not counted, as before).
+	default:
+		s.signInFailed(sam, known)
 	}
 	s.audit(ctx, rc, "signin.failure", sam, detail, store.ResultDenied)
 	s.loginError(rc, c, http.StatusUnauthorized, key, typed, enroll)
@@ -490,7 +554,8 @@ func (s *Server) handlePassword(rc *reqCtx) {
 		fail(http.StatusTooManyRequests, "signin.err.rate_ip")
 		return
 	}
-	if s.accountFails.Blocked(sam) {
+	known := s.knownBrowser(ctx, rc, sam)
+	if s.signInBlocked(sam, known) {
 		fail(http.StatusTooManyRequests, "signin.err.rate_account")
 		return
 	}
@@ -506,7 +571,7 @@ func (s *Server) handlePassword(rc *reqCtx) {
 	if err := s.dir.ChangeExpiredPassword(ctx, sam, oldPw, newPw); err != nil {
 		key, result := passwordChangeError(err)
 		if key == "password.err.current" {
-			s.accountFails.Fail(sam)
+			s.signInFailed(sam, known)
 		}
 		detail := ""
 		if errors.Is(err, ad.ErrKDCNotVerified) {
@@ -521,8 +586,19 @@ func (s *Server) handlePassword(rc *reqCtx) {
 		fail(http.StatusBadRequest, key)
 		return
 	}
-	s.accountFails.Reset(sam)
+	s.signInSucceeded(ctx, rc, sam)
 	s.audit(ctx, rc, "password.change_expired", sam, "kpasswd (confirmed with a domain controller)", store.ResultOK)
+	// A new password ends whatever the account held (its sessions end on
+	// AD's new pwdLastSet as well; this also ends tokens and consents now).
+	if u, err := s.dir.UserBySAM(ctx, sam); err == nil {
+		if rev, n, err := s.revokeUser(ctx, u, "password changed"); err == nil {
+			s.audit(ctx, rc, "user.revoke", sam, revokeDetail("password changed", rev, n), store.ResultOK)
+		} else {
+			s.log.Error("revoking after a password change failed", "user", sam, "err", err)
+		}
+	} else {
+		s.log.Error("user lookup after a password change failed", "user", sam, "err", err)
+	}
 	s.sess.destroy(rc.sess)
 	s.clearSessionCookie(rc.w)
 	rc.redirect(c.with("/login?m=password_changed"))
@@ -624,6 +700,9 @@ func (s *Server) handleMFAKey(rc *reqCtx) {
 		rc.redirect(c.with("/login"))
 		return
 	}
+	if s.mfaRejectLocked(rc, u) {
+		return
+	}
 	ok, err := s.keyBackend.FinishKey(ctx, u, ceremony, rc.rawForm("response"))
 	if err != nil && errors.Is(err, mfa.ErrUnavailable) {
 		s.log.Error("security key verification failed", "err", err)
@@ -637,15 +716,34 @@ func (s *Server) handleMFAKey(rc *reqCtx) {
 	s.mfaPassed(rc, c, sam, amrHWK, "security key backend="+s.mfa.Name())
 }
 
-// mfaRefused counts a wrong second factor and ends the sign-in after
-// maxMFAFailures.
+// mfaRejectLocked refuses a second-factor attempt, without checking it,
+// while the account's second factor is locked by too many wrong attempts
+// (ratelimit.mfa_failures within ratelimit.mfa_window_minutes, counted per
+// account across sessions and addresses). The lock ends by itself when the
+// oldest failure leaves the window; the password sign-in is not affected.
+func (s *Server) mfaRejectLocked(rc *reqCtx, u *directory.User) bool {
+	if !s.mfaLocked(u.GUID) {
+		return false
+	}
+	s.audit(rc.ctx(), rc, "mfa.rate_limited", u.SAM, "per-account second-factor limit", store.ResultDenied)
+	rc.render(http.StatusTooManyRequests, "login_2fa", s.mfaData(rc, rc.T("mfa.err.locked")))
+	return true
+}
+
+// mfaRefused counts a wrong second factor, per session (the sign-in ends
+// after maxMFAFailures) and per account (mfaFails).
 func (s *Server) mfaRefused(rc *reqCtx, c cont, sam, what string) {
 	sess := rc.sess
 	sess.mu.Lock()
 	sess.mfaFailures++
 	n := sess.mfaFailures
+	guid := sess.guid
 	sess.mu.Unlock()
 	s.audit(rc.ctx(), rc, "mfa.failure", sam, what, store.ResultDenied)
+	if s.mfaFailed(rc.ctx(), rc, guid, sam) {
+		rc.render(http.StatusTooManyRequests, "login_2fa", s.mfaData(rc, rc.T("mfa.err.locked")))
+		return
+	}
 	if n >= maxMFAFailures {
 		s.sess.destroy(sess)
 		s.clearSessionCookie(rc.w)
@@ -674,12 +772,22 @@ func (s *Server) mfaPassed(rc *reqCtx, c cont, sam, method, detail string) {
 	s.finish(rc, c)
 }
 
-// sessionUser re-reads the session's user.
+// sessionUser re-reads the session's user. When the account's password
+// was changed or reset in AD since the session's sign-in, the session ends
+// and errSessionRevoked is returned (see userError).
 func (s *Server) sessionUser(ctx context.Context, sess *Session) (*directory.User, error) {
 	sess.mu.Lock()
-	guid := sess.guid
+	guid, pwdSet, authTime := sess.guid, sess.pwdSet, sess.authTime
 	sess.mu.Unlock()
-	return s.dir.UserByGUID(ctx, guid)
+	u, err := s.dir.UserByGUID(ctx, guid)
+	if err != nil {
+		return nil, err
+	}
+	if u.PasswordChangedSince(pwdSet, authTime) {
+		s.sess.destroy(sess)
+		return nil, errSessionRevoked
+	}
+	return u, nil
 }
 
 func (s *Server) handleMFA(rc *reqCtx) {
@@ -700,6 +808,9 @@ func (s *Server) handleMFA(rc *reqCtx) {
 		s.sess.destroy(sess)
 		s.clearSessionCookie(rc.w)
 		rc.redirect(c.with("/login"))
+		return
+	}
+	if s.mfaRejectLocked(rc, u) {
 		return
 	}
 	res, err := s.mfa.Verify(ctx, u, rc.form("code"))
@@ -762,14 +873,22 @@ func (s *Server) pendingSecret(sess *Session, u *directory.User) ([]byte, error)
 	return sec, nil
 }
 
+// enrollAllowed admits an enrollment page: never trust on first use
+// without the policy's consent. A session holding an administrator's
+// one-time link (checked at sign-in, consumed with the enrollment) may
+// enroll; otherwise mfa.enrollment (or admin_enrollment_requires_link)
+// must allow enrollment without a link, and the password must have been
+// verified within the last config.EnrollSelfMaxAge (an older session signs
+// in again first).
 func (s *Server) enrollAllowed(rc *reqCtx) (*directory.User, bool) {
 	if s.local == nil {
 		rc.errorPage(http.StatusNotFound, "err.not_found")
 		return nil, false
 	}
+	c := rc.cont()
 	u, err := s.sessionUser(rc.ctx(), rc.sess)
 	if err != nil {
-		rc.errorPage(http.StatusBadGateway, "err.directory")
+		s.userError(rc, c, err)
 		return nil, false
 	}
 	if rc.sess.snapshotStage() == stageFull {
@@ -778,6 +897,30 @@ func (s *Server) enrollAllowed(rc *reqCtx) (*directory.User, bool) {
 			rc.redirect("/")
 			return nil, false
 		}
+	}
+	rc.sess.mu.Lock()
+	link, admin := rc.sess.enrollLink, rc.sess.admin
+	rc.sess.mu.Unlock()
+	if link != "" {
+		return u, true
+	}
+	if s.enrollLinkRequired(admin) {
+		key := "signin.err.enroll_link"
+		if admin {
+			key = "signin.err.admin_link"
+		}
+		s.audit(rc.ctx(), rc, "mfa.enroll", u.SAM, "enrollment without a link refused by policy", store.ResultDenied)
+		rc.errorPage(http.StatusForbidden, key)
+		return nil, false
+	}
+	if !s.recentPassword(rc.sess) {
+		// Self-enrollment needs a fresh password: sign in again.
+		s.audit(rc.ctx(), rc, "mfa.enroll", u.SAM, "password verification too old for enrollment", store.ResultDenied)
+		s.sess.destroy(rc.sess)
+		rc.sess = nil
+		s.clearSessionCookie(rc.w)
+		rc.redirect(c.with("/login?m=reauth"))
+		return nil, false
 	}
 	return u, true
 }
@@ -839,14 +982,17 @@ func (s *Server) handleEnroll(rc *reqCtx) {
 	sess.mu.Lock()
 	link := sess.enrollLink
 	sess.mu.Unlock()
+	linkGone := func() {
+		s.audit(ctx, rc, "mfa.enroll", u.SAM, "enrollment link no longer valid", store.ResultDenied)
+		s.sess.destroy(sess)
+		s.clearSessionCookie(rc.w)
+		rc.redirect(c.with("/login"))
+	}
+	sam := strings.ToLower(u.SAM)
 	if link != "" {
-		// The administrator's one-time link is consumed with the
-		// enrollment (it was checked at sign-in, it must still be valid).
-		if ok, err := s.store.UseEnrollLink(ctx, link, u.SAM); err != nil || !ok {
-			s.audit(ctx, rc, "mfa.enroll", u.SAM, "enrollment link no longer valid", store.ResultDenied)
-			s.sess.destroy(sess)
-			s.clearSessionCookie(rc.w)
-			rc.redirect(c.with("/login"))
+		// The one-time link was checked at sign-in; it must still be valid.
+		if ok, err := s.store.ValidEnrollLink(ctx, link, sam); err != nil || !ok {
+			linkGone()
 			return
 		}
 	}
@@ -856,7 +1002,29 @@ func (s *Server) handleEnroll(rc *reqCtx) {
 		return
 	}
 	if !ok {
+		// A wrong code keeps the link for the next try.
 		rc.render(http.StatusBadRequest, "enroll", s.enrollData(rc, u, sec, rc.T("enroll.err.code")))
+		return
+	}
+	if link != "" {
+		// The link is consumed with the enrollment. Losing the race with
+		// another use of the same link undoes this enrollment.
+		if ok, err := s.store.UseEnrollLink(ctx, link, sam); err != nil || !ok {
+			if _, rerr := s.local.Reset(ctx, u.GUID); rerr != nil {
+				s.log.Error("undoing an enrollment whose link was used meanwhile failed", "user", u.SAM, "err", rerr)
+			}
+			linkGone()
+			return
+		}
+	}
+	// A new second factor ends every other session and token of the
+	// account: whoever else held them signed in without it. This session
+	// stays (it is rotated below and marked as starting after the
+	// revocation).
+	rev, n, err := s.revokeUser(ctx, u, "second factor enrolled")
+	if err != nil {
+		s.log.Error("revoking after a 2FA enrollment failed", "user", u.SAM, "err", err)
+		rc.errorPage(http.StatusInternalServerError, "err.internal")
 		return
 	}
 	sess.mu.Lock()
@@ -865,10 +1033,12 @@ func (s *Server) handleEnroll(rc *reqCtx) {
 	sess.mfaVerified = true
 	sess.mfaMethod = amrOTP
 	sess.recoveryCodes = codes
+	sess.validFrom = rev.RevokedAt
 	sess.mu.Unlock()
 	tok := s.sess.rotate(sess, stageFull)
 	s.setSessionCookie(rc.w, tok)
 	s.audit(ctx, rc, "mfa.enroll", u.SAM, "totp + recovery codes (local)", store.ResultOK)
+	s.audit(ctx, rc, "user.revoke", u.SAM, revokeDetail("second factor enrolled", rev, n), store.ResultOK)
 	rc.redirect(c.with("/login/recovery-codes"))
 }
 

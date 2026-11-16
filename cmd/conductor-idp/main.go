@@ -5,8 +5,9 @@
 //	conductor-idp client ...       register and maintain OIDC clients
 //	conductor-idp saml ...         register and maintain SAML service providers
 //	conductor-idp keys ...         list and rotate signing keys
-//	conductor-idp enroll-link      one-time 2FA enrollment link for an administrator
+//	conductor-idp enroll-link      one-time 2FA enrollment link for a user
 //	conductor-idp mfa reset        remove a user's 2FA (local backend)
+//	conductor-idp user revoke      end a user's sessions, tokens and consents
 //	conductor-idp audit ...        verify or export the audit log
 //	conductor-idp gen-key FILE     create a master key file (0600)
 //	conductor-idp templates ...    list, show and check the template overrides
@@ -35,8 +36,9 @@ commands:
   client add|list|show|update|rotate|enable|disable|remove
   saml add|list|show|update|enable|disable|remove
   keys list | keys rotate oidc | keys rotate saml [-immediate]
-  enroll-link -user NAME      one-time 2FA enrollment link (administrators)
-  mfa reset -user NAME        remove a user's 2FA (local backend)
+  enroll-link -user NAME      one-time 2FA enrollment link
+  mfa reset -user NAME        remove a user's 2FA (local backend), revoke sessions and tokens
+  user revoke -user NAME      end a user's sessions, revoke their tokens and consents
   audit verify | audit export
   gen-key FILE                write a new 32-byte master key (0600)
   templates list | templates show NAME | templates check
@@ -77,6 +79,8 @@ func main() {
 		err = cmdEnrollLink(ctx, *cfgPath, args[1:])
 	case "mfa":
 		err = cmdMFA(ctx, *cfgPath, args[1:])
+	case "user":
+		err = cmdUser(ctx, *cfgPath, args[1:])
 	case "audit":
 		err = cmdAudit(ctx, *cfgPath, args[1:])
 	case "gen-key":

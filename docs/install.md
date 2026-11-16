@@ -138,8 +138,9 @@ sudo -u conductor-idp conductor-idp client list
 ```
 
 Commands that need the master key or the directory (`keys rotate`,
-`check`, group names in `client add -group Engineering`, `mfa reset`) get
-the same credentials as the service through `systemd-run`:
+`check`, group names in `client add -group Engineering`, `enroll-link`,
+`mfa reset`, `user revoke`) get the same credentials as the service
+through `systemd-run`:
 
 ```sh
 alias cidp='sudo systemd-run --quiet --wait --pipe --collect --uid=conductor-idp --gid=conductor-idp \
@@ -150,7 +151,13 @@ cidp check
 cidp client add -name Grafana -redirect-uri https://grafana.example.com/login/generic_oauth \
   -scope profile -scope email -scope groups -group Engineering -groups-claim names -first-party
 cidp enroll-link -user jsilva.admin        # first administrator: one-time 2FA enrollment link
+cidp user revoke -user jsilva -reason "phished password"   # end sessions, tokens and consents
 ```
+
+`mfa reset` and `user revoke` take effect at once for tokens and consents;
+browser sessions of the running service end on their next request. A
+password changed or reset in AD ends the account's sessions and refresh
+chains by itself (within the 30-second directory cache).
 
 `-metadata -` reads SP metadata from standard input (`curl …/metadata | cidp saml add -metadata - …`).
 
@@ -158,7 +165,9 @@ cidp enroll-link -user jsilva.admin        # first administrator: one-time 2FA e
 
 Administrators (Domain Admins, or `roles.admin_groups`) always need 2FA.
 Without an enrollment they can enroll only through a one-time link
-(`enroll-link`, valid 24 h). After that, the admin pages are at
+(`enroll-link`, valid 24 h). Other users enroll the same way unless
+`mfa.enrollment = "self"`: the default never lets a password alone bind an
+authenticator to an account. After that, the admin pages are at
 `<issuer>/admin`, or on the admin listener when `server.admin_listen` is
 set (section 10).
 
@@ -269,7 +278,8 @@ What changes:
 - Administrator enrollment links (`cidp enroll-link`, or the admin pages)
   point at `admin_url` and work only there: open them over the VPN. The
   main listener refuses them. With `admin_listen = "off"` they stay on the
-  issuer, since there is nowhere else to enroll.
+  issuer, since there is nowhere else to enroll. Links for other users
+  point at the issuer.
 - With the conductor second-factor backend and security keys (section 9),
   add the admin origin to conductor's WebAuthn origins too, or keys will
   not work on the admin listener.

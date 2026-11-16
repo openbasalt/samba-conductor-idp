@@ -82,6 +82,15 @@ func (d *fakeDir) GroupNames(_ context.Context, sids []sid.SID) (map[string]stri
 	return out, nil
 }
 func (d *fakeDir) DomainAdminsSID(context.Context) (sid.SID, error) { return dsid(512), nil }
+func (d *fakeDir) AddressHolders(_ context.Context, address string) ([]string, error) {
+	var out []string
+	for _, u := range d.users {
+		if strings.EqualFold(u.Mail, address) || strings.EqualFold(u.UPN, address) {
+			out = append(out, u.GUID)
+		}
+	}
+	return out, nil
+}
 func (d *fakeDir) GroupByName(_ context.Context, name string) (sid.SID, error) {
 	if strings.EqualFold(name, "Engineering") {
 		return sidEng, nil
@@ -577,4 +586,34 @@ func TestSocketAdmitsOnlyAllowedPeers(t *testing.T) {
 		t.Fatalf("malformed: %+v %v", r, err)
 	}
 	_ = c.Close()
+}
+
+func TestUserRevoke(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	alice := "11111111-1111-4111-8111-111111111111"
+	var out idpapi.UserRevoked
+	e.must(t, idpapi.OpUserRevoke, idpapi.UserRevokeParams{User: "alice", Reason: "compromised"}, &out)
+	if out.User != "alice" || out.RevokedAt.IsZero() {
+		t.Fatalf("%+v", out)
+	}
+	if at, _ := e.st.UserRevokedAt(ctx, alice); at.IsZero() {
+		t.Fatal("revocation not stored")
+	}
+	if err := e.call(t, idpapi.OpUserRevoke, idpapi.UserRevokeParams{User: "nobody"}, nil); err == nil || err.Code != idpapi.CodeNotFound {
+		t.Fatalf("unknown user: %+v", err)
+	}
+	if !idpapi.OpUserRevoke.Mutating() {
+		t.Fatal("user.revoke is not audited as a mutation")
+	}
+	evs, _, _ := e.st.ListAudit(ctx, store.AuditFilter{}, 0, 10)
+	found := false
+	for _, ev := range evs {
+		if strings.Contains(ev.Detail, "reason=compromised") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("not audited: %+v", evs)
+	}
 }
