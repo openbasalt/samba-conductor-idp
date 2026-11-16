@@ -41,8 +41,8 @@ type ClientInput struct {
 	RequireMFA    bool
 	// EmailVerified asserts email_verified=true with the email claim (the
 	// administrator vouches that the client may trust AD's mail). nil keeps
-	// the stored value on update (false on create): the management API does
-	// not carry it yet.
+	// the stored value on update (false on create); the management API
+	// always sets it (protocol 2).
 	EmailVerified *bool
 }
 

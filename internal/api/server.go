@@ -514,22 +514,24 @@ func (s *Server) status(ctx context.Context) idpapi.Status {
 // ---- conversions ----
 
 func clientInput(in idpapi.ClientInput) registry.ClientInput {
+	ev := in.EmailVerified
 	return registry.ClientInput{Name: in.Name, Kind: in.Kind, RedirectURIs: in.RedirectURIs, PostLogoutURIs: in.PostLogoutURIs,
 		Scopes: in.Scopes, Groups: in.Groups, AllowAllUsers: in.AllowAllUsers, FirstParty: in.FirstParty,
-		GroupsClaim: in.GroupsClaim, GroupsFilter: in.GroupsFilter, RequireMFA: in.RequireMFA}
+		GroupsClaim: in.GroupsClaim, GroupsFilter: in.GroupsFilter, RequireMFA: in.RequireMFA, EmailVerified: &ev}
 }
 
 func clientView(c *store.Client) idpapi.Client {
 	return idpapi.Client{ID: c.ID, ClientInput: idpapi.ClientInput{Name: c.Name, Kind: c.Kind, RedirectURIs: nz(c.RedirectURIs),
 		PostLogoutURIs: nz(c.PostLogoutURIs), Scopes: nz(c.Scopes), Groups: nz(c.AllowedGroups), AllowAllUsers: c.AllowAllUsers,
-		FirstParty: c.FirstParty, GroupsClaim: c.GroupsClaim, GroupsFilter: nz(c.GroupsFilter), RequireMFA: c.RequireMFA},
+		FirstParty: c.FirstParty, GroupsClaim: c.GroupsClaim, GroupsFilter: nz(c.GroupsFilter), RequireMFA: c.RequireMFA,
+		EmailVerified: c.EmailVerified},
 		Enabled: c.Enabled, HasSecret: c.SecretHash != "", CreatedAt: c.CreatedAt, UpdatedAt: c.UpdatedAt, SecretRotatedAt: c.SecretRotatedAt}
 }
 
 func clientDetail(c *store.Client) string {
-	return fmt.Sprintf("name=%s kind=%s redirects=%s scopes=%s groups=%s all_users=%v first_party=%v require_mfa=%v groups_claim=%s",
+	return fmt.Sprintf("name=%s kind=%s redirects=%s scopes=%s groups=%s all_users=%v first_party=%v require_mfa=%v groups_claim=%s email_verified=%v",
 		c.Name, c.Kind, strings.Join(c.RedirectURIs, " "), strings.Join(c.Scopes, ","), strings.Join(c.AllowedGroups, ","),
-		c.AllowAllUsers, c.FirstParty, c.RequireMFA, c.GroupsClaim)
+		c.AllowAllUsers, c.FirstParty, c.RequireMFA, c.GroupsClaim, c.EmailVerified)
 }
 
 func nz(v []string) []string {
