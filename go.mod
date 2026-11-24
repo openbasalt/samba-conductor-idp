@@ -9,7 +9,7 @@ go 1.27.4
 require (
 	github.com/BurntSushi/toml v1.6.0
 	github.com/beevik/etree v1.8.1
-	github.com/crewjam/saml v0.6.3
+	github.com/crewjam/saml v0.5.1
 	github.com/go-jose/go-jose/v4 v4.1.9
 	github.com/go-ldap/ldap/v3 v3.4.15
 	github.com/google/uuid v1.6.0
