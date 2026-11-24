@@ -136,7 +136,7 @@ func (h *harness) idClaims(tok string) map[string]any {
 	if err := json.NewDecoder(resp.Body).Decode(&set); err != nil {
 		h.t.Fatal(err)
 	}
-	jws, err := jose.ParseSigned(tok, []jose.SignatureAlgorithm{jose.ES256})
+	jws, err := jose.ParseSignedCompact(tok, []jose.SignatureAlgorithm{jose.ES256})
 	if err != nil {
 		h.t.Fatal(err)
 	}
