@@ -234,6 +234,7 @@
  "signin.err.locked": "This account is locked. Ask the helpdesk to unlock it.",
  "signin.err.rate_account": "Too many failed attempts for this account. Wait a few minutes before trying again.",
  "signin.err.rate_ip": "Too many attempts from your address. Wait a minute and try again.",
+ "signin.err.refused": "Sign-in was refused. If it keeps happening, tell an administrator.",
  "signin.err.restricted": "This account may not sign in now (logon hours or workstation restrictions).",
  "signin.msg.expired": "Your session expired. Sign in again.",
  "signin.msg.mfa_required": "This page needs two-factor authentication. Sign in again.",

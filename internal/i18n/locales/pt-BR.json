@@ -234,6 +234,7 @@
  "signin.err.locked": "Esta conta está bloqueada. Peça ao suporte para desbloqueá-la.",
  "signin.err.rate_account": "Tentativas com falha demais para esta conta. Aguarde alguns minutos antes de tentar de novo.",
  "signin.err.rate_ip": "Tentativas demais a partir do seu endereço. Aguarde um minuto e tente de novo.",
+ "signin.err.refused": "A entrada foi recusada. Se continuar acontecendo, avise um administrador.",
  "signin.err.restricted": "Esta conta não pode entrar agora (restrição de horário ou de estação).",
  "signin.msg.expired": "Sua sessão expirou. Entre novamente.",
  "signin.msg.mfa_required": "Esta página exige autenticação em dois fatores. Entre novamente.",

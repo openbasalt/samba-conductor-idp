@@ -466,7 +466,10 @@ NameID.
   never falls back to the simple bind, counts no per-account failure, is
   logged as an error and audited as `signin.failure` with detail
   `kdc answer not verified` (or `identity mismatch`), and the user sees the
-  generic directory error. A wrong password stays `signin.err.invalid`.
+  generic directory error, except for an identity mismatch: a DC answered
+  there, so the user sees a neutral refusal (`signin.err.refused`, HTTP
+  403) that neither points at the network nor gives the reason. A wrong
+  password stays `signin.err.invalid`.
 - Expired and must-change answers come from the KDC and are unauthenticated
   as well. Forging one only reaches the password change page for the typed
   account, which creates no SSO session. The change itself
