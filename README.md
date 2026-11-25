@@ -6,9 +6,17 @@ and the family's [architecture.md](https://github.com/openbasalt/samba-conductor
 
 Container image: `docker.io/openbasalt/samba-conductor-idp`, tags `0.1.1` and `latest`, also on `ghcr.io/openbasalt` with the same digests, see [containers.md](https://github.com/openbasalt/samba-conductor-docs/blob/main/containers.md).
 
-Status: 0.1.2 released (signed GitHub release `v0.1.2`, APT packages
-`0.1.2-1`), a security update of 0.1.1 built with Go 1.27.3; the
-container image above still carries 0.1.1. OIDC and SAML validated end to end in
+Status: 0.2.0 released on 2026-11-24 (signed tag `v0.2.0`, packages
+`0.2.0-1` in the APT `stable` suite and in basalt-tools), built with Go
+1.27.4; the container image above still carries 0.1.1. 0.2.0 closes the
+findings of a security review: e-mail addresses asserted only when unique
+in the directory, `email_verified` as a per-client opt-in, revocation of
+sessions and tokens on credential changes, second-factor enrollment by
+one-time link by default, wrong second factors counted per account and the
+KDC proven before a password is accepted. Its management protocol is
+version 2, so it is upgraded together with conductor 0.3.0: read
+[upgrading.md](https://github.com/openbasalt/samba-conductor-docs/blob/main/upgrading.md)
+before upgrading. OIDC and SAML validated end to end in
 an isolated two-DC lab with an independent OIDC client, Grafana and a
 crewjam SAML SP, desktop and mobile ([`docs/usage-p4.md`](docs/usage-p4.md)),
 and managed from conductor's Single sign-on section with single logout and
