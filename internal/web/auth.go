@@ -483,14 +483,17 @@ func (s *Server) loginFailed(rc *reqCtx, ctx context.Context, c cont, sam, typed
 		// The KDC accepted the password but its answer could not be proven
 		// with a domain controller (forged KDC, identity mismatch, or DC
 		// unreachable). Not a wrong password: no account failure is
-		// counted, and the user sees the generic directory error.
-		detail := "kdc answer not verified"
+		// counted, and the user sees the generic directory error, or, for
+		// an identity mismatch (a domain controller answered, for another
+		// account), a neutral refusal that does not point at the network.
+		// The audit log keeps the reason.
+		detail, status, key := "kdc answer not verified", http.StatusBadGateway, "err.directory"
 		if errors.Is(err, ad.ErrIdentityMismatch) {
-			detail = "identity mismatch"
+			detail, status, key = "identity mismatch", http.StatusForbidden, "signin.err.refused"
 		}
 		s.log.Error("sign-in: Kerberos answer not verified by a domain controller", "user", sam, "err", err)
 		s.audit(ctx, rc, "signin.failure", sam, detail, store.ResultFailed)
-		s.loginError(rc, c, http.StatusBadGateway, "err.directory", typed, enroll)
+		s.loginError(rc, c, status, key, typed, enroll)
 		return
 	}
 	if !errors.As(err, &ae) {

@@ -107,6 +107,10 @@ func (d *fakeDir) Authenticate(_ context.Context, sam, password string) error {
 		// The KDC accepted the password but no DC confirmed its answer.
 		return &ad.VerifyError{Cause: errors.New("ldap/dc: invalid credentials")}
 	}
+	if u.refuse == "mismatch" {
+		// A DC confirmed the ticket but bound another account.
+		return &ad.VerifyError{Mismatch: true, Cause: errors.New(`signed in as "` + sam + `", bound as "other.user"`)}
+	}
 	if u.refuse != "" {
 		return ad.ClassifyBindError(ldap.NewError(ldap.LDAPResultInvalidCredentials, errors.New("80090308: LdapErr: DSID-0C09041C, comment: AcceptSecurityContext error, data "+u.refuse+", v4563")))
 	}

@@ -63,6 +63,40 @@ func TestUnverifiedKDCAnswer(t *testing.T) {
 	}
 }
 
+// TestIdentityMismatchRefusal: when a domain controller binds another
+// account than the one signing in, the page shows a neutral refusal (not
+// "the directory is not reachable", and not the reason), while the audit
+// log keeps "identity mismatch" and no account failure is counted.
+func TestIdentityMismatchRefusal(t *testing.T) {
+	h := newHarness(t, harnessOpts{})
+	h.dir.mu.Lock()
+	h.dir.users["spoofed"].refuse = "mismatch"
+	h.dir.mu.Unlock()
+	b := h.browser()
+	b.get("/login")
+	for i := 0; i < 6; i++ {
+		b.submit("/login", url.Values{"username": {"spoofed"}, "password": {"Passw0rd!spoofed"}})
+		b.mustStatus(http.StatusForbidden)
+		b.mustContain("Sign-in was refused")
+		for _, leak := range []string{"not reachable", "mismatch", "other.user", "Wrong username or password"} {
+			if strings.Contains(b.body, leak) {
+				t.Fatalf("refusal contains %q", leak)
+			}
+		}
+	}
+	events, _, _ := h.store.ListAudit(context.Background(), store.AuditFilter{Action: "signin.failure"}, 0, 10)
+	if len(events) == 0 || events[0].Detail != "identity mismatch" || events[0].Result != store.ResultFailed {
+		t.Fatalf("audit %+v", events)
+	}
+	h.dir.mu.Lock()
+	h.dir.users["spoofed"].refuse = ""
+	h.dir.mu.Unlock()
+	b.submit("/login", url.Values{"username": {"spoofed"}, "password": {"Passw0rd!spoofed"}})
+	if b.last.StatusCode == http.StatusTooManyRequests {
+		t.Fatal("mismatches counted as account failures")
+	}
+}
+
 func TestCSRFRequired(t *testing.T) {
 	h := newHarness(t, harnessOpts{})
 	b := h.browser()
